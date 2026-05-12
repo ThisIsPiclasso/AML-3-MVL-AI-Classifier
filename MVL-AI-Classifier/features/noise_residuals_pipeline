@@ -13,9 +13,7 @@ class NoiseResidualPreprocessor(BasePreprocessor):
     def __init__(
         self,
         sigma=1.0,
-        standardize=False,
         epsilon=1e-8,
-        normalization_preprocessor=None,
     ):
         """
         Parameters
@@ -26,20 +24,13 @@ class NoiseResidualPreprocessor(BasePreprocessor):
             Larger sigma:
               - removes more low-frequency content,
               - produces a stronger high-pass response.
-
-        standardize : bool
-            If True, divide the residual by its standard deviation.
-
         epsilon : float
             Numerical stability constant.
 
         normalization_preprocessor : RGBNormalizationPreprocessor
         """
         self.sigma = sigma
-        self.standardize = standardize
         self.epsilon = epsilon
-
-        # Dependency injection keeps the pipeline modular.
         self.normalization_preprocessor = RGBNormalizationPreprocessor(epsilon=epsilon)
 
     def __call__(self, image_patch):
