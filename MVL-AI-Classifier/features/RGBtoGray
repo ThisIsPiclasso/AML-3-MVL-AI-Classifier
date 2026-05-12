@@ -10,11 +10,10 @@ class RGBToGrayPreprocessor(BasePreprocessor):
         self.normalize = normalize
 
     def __call__(self, image_patch):
-        image = self.normalization_preprocessor(image_patch)
         gray = (
-            0.299 * image[..., 0] +
-            0.587 * image[..., 1] +
-            0.114 * image[..., 2]
+            0.299 * image_patch[..., 0] +
+            0.587 * image_patch[..., 1] +
+            0.114 * image_patch[..., 2]
         )
 
         # Optional normalization to [0, 1]
