@@ -8,8 +8,6 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
     def __init__(
         self,
         n_bins,
-        normalization_preprocessor=None
-        grayscale_preprocessor=None,
         epsilon=1e-8,
     ):
         """
@@ -17,9 +15,6 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
         ----------
         n_bins : int
             Number of radial frequency bins.
-        normalization_preprocessor : RGBNormalizationPreprocessor
-        grayscale_preprocessor :  RGBToGrayPreprocessor
-
         epsilon : float
             Numerical stability constant for log transform.
         """
