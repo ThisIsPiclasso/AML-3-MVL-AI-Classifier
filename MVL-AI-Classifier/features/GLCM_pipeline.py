@@ -11,9 +11,10 @@ class GLCMPreprocessor(BasePreprocessor):
         n_levels=16,
         epsilon=1e-8,
         symmetric=True,
-        RGB_normalization_preprocessor=None
         grayscale_preprocessor=None,
     ):
+        if not isinstance(n_levels, (int, np.integer)) or n_levels <= 0:
+            raise ValueError("n_levels must be a positive integer.")
         self.n_levels = int(n_levels)
         self.epsilon = epsilon
         self.symmetric = symmetric
