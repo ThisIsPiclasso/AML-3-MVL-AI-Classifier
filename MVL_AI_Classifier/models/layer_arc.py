@@ -1,8 +1,16 @@
 from abc import ABC, abstractmethod
-
+import math
 import torch
 import torch.nn as nn
 import timm
+
+MODEL_DICTIONARY = {}
+
+
+def add_model(name: str):
+    def register(class_):
+        MODEL_DICTIONARY[name] = class_
+        return class_
 
 
 class LayerTemplate(nn.Module, ABC):
@@ -33,13 +41,14 @@ class LayerTemplate(nn.Module, ABC):
         return self.model(x)
 
 
+@add_model("mlp")
 class MLPLayer(LayerTemplate):
     """
     A simple MLP layer that can be used for tabular data or any other data that can be flattened.
     """
 
     def __init__(
-        self, input_size: int, hidden_dim: list = [256], embed_dim: int = 512
+        self, input_shape: tuple, hidden_dim: list = [256], embed_dim: int = 512
     ) -> None:
         """
         Initialize the MLP layer.
@@ -48,7 +57,7 @@ class MLPLayer(LayerTemplate):
             hidden_dim (list): A list of hidden layer dimensions. Defaults to [256].
             embed_dim (int): The dimension of the output embedding. Defaults to 512.
         """
-        self.input_size = input_size
+        self.input_size = math.prod(input_shape)
         self.hidden_dim = hidden_dim
         self.embed_dim = embed_dim
 
@@ -74,6 +83,7 @@ class MLPLayer(LayerTemplate):
         return nn.Sequential(*layers)
 
 
+@add_model("cnn")
 class CNNLayer(LayerTemplate):
     """
     A CNN layer that can be used for image data. It uses a pre-trained model
@@ -81,10 +91,10 @@ class CNNLayer(LayerTemplate):
     """
 
     def __init__(
-        self, arch: str = "resnet18", input_chan: int = 3, embed_dim: int = 512
+        self, input_shape: tuple, arch: str = "resnet18", embed_dim: int = 512
     ) -> None:
         self.arch = arch
-        self.input_chan = input_chan
+        self.input_chan = input_shape[0]
         self.embed_dim = embed_dim
 
         super().__init__()
