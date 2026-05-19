@@ -1,7 +1,7 @@
 import numpy as np
 
 from features.base_processor import BasePreprocessor
-from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE
+from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE, DEFAULT_N_BINS
 from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
 from features.rgb_gray_pipeline import RGBToGrayPreprocessor
 
@@ -17,7 +17,7 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
 
     def __init__(
         self,
-        n_bins: int = 64,
+        n_bins: int = DEFAULT_N_BINS,
         epsilon: float = DEFAULT_EPSILON,
     ):
         """
