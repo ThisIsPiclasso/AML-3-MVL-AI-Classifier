@@ -6,6 +6,9 @@ from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
 
+from ..constants import DEFAULT_EPSILON as epsilon
+
+
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 NAME_MAP = {
     "adm": "ADM",
@@ -19,14 +22,14 @@ NAME_MAP = {
 
 
 class DatasetBuilder:
-    def __init__(self, size: int = 1000, root: str = "./data/raw"):
+    def __init__(self, size: int = 1000, root: str = "./data/subset"):
         """Initialize the DatasetBuilder with a specified size and root directory.
         Args:
             size (int): The number of samples to include in the final dataset after undersampling.
             root (str): The root directory to scan for images.
         """
         self.root_dir = Path(root).resolve()
-        self.data = []
+        self.data = pd.DataFrame()
         self.size = size
 
     def _get_paths(self) -> list:
@@ -119,9 +122,83 @@ class DatasetBuilder:
             raise FileNotFoundError(f"No dataset file found at {path.resolve()}")
         self.data = pd.read_parquet(path)
 
+    def split(
+        self, train_size: float = 0.8, val_size: float = 0.1, test_size: float = 0.1
+    ) -> None:
+        """
+        Split the dataset into training, validation, and test sets based on specified ratios.
+        Args:
+            train_size (float): The proportion of the dataset to include in the training set. Defaults to 0.8.
+            val_size (float): The proportion of the dataset to include in the validation set. Defaults to 0.1.
+            test_size (float): The proportion of the dataset to include in the test set. Defaults to 0.1.
+        Raises:
+            ValueError: If the split ratios do not sum to 1.0.
+        """
+        if self.data.empty:
+            print("No data to split.")
+            return
+
+        total_size = train_size + val_size + test_size
+        if not abs(total_size - 1.0) < epsilon:
+            raise ValueError(
+                f"The split ratios must sum to 1.0. Currently they sum to {total_size} "
+                f"(Train: {train_size}, Val: {val_size}, Test: {test_size})"
+            )
+
+        # Shuffeling the data in order to create a random split
+        df = self.data.sample(frac=1, random_state=42).reset_index(drop=True)
+        total_len = len(df)
+
+        # Setting boundries for the split
+        train_end = int(total_len * train_size)
+        val_end = train_end + int(total_len * val_size)
+
+        df["split"] = "train"
+
+        if val_size > 0:
+            val_indices = df.index[train_end:val_end]
+            df.loc[val_indices, "split"] = "val"
+
+        if test_size > 0:
+            test_indices = df.index[val_end:]
+            df.loc[test_indices, "split"] = "test"
+
+        self.data = df
+
     def __len__(self):
         """Magic method to get the number of records in the dataset.
         Returns:
             int: The number of records in the dataset.
         """
         return len(self.data)
+
+    def __call__(
+        self,
+        output_path: str = "data/dataset.parquet",
+        train_size: float = 0.8,
+        val_size: float = 0.1,
+        test_size: float = 0.1,
+    ) -> None:
+        """
+        Execute the full dataset building process, including scanning for images, filtering, undersampling,
+        splitting, and saving the final dataset.
+        Args:
+            output_path (str): The file path where the final dataset will be saved. Defaults to "data/dataset.parquet".
+            train_size (float): The proportion of the dataset to include in the training set. Defaults to 0.8.
+            val_size (float): The proportion of the dataset to include in the validation set. Defaults to 0.1.
+            test_size (float): The proportion of the dataset to include in the test set. Defaults to 0.1.
+        """
+        # Get raw data from the storage path
+        self.scan()
+
+        # Filter out low quality data and duplicates
+        self.filter()
+
+        # Balance dataset representation
+        self.undersample()
+
+        # Split the data into train/validation/test
+        self.split(train_size=train_size, val_size=val_size, test_size=test_size)
+
+        # Save the final data frame
+        self.save(name=output_path)
