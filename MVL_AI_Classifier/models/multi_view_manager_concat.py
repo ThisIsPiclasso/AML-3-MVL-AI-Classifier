@@ -1,7 +1,6 @@
-from layer_arc import MLPLayer
-
 import torch
 import torch.nn as nn
+from MVL_AI_Classifier.models.layer_arc import MODEL_DICTIONARY
 
 
 class MultiViewNet(nn.Module):
@@ -10,11 +9,11 @@ class MultiViewNet(nn.Module):
     and performs intermediate fusion using a transformer encoder.
     """
 
-    def __init__(self, encoders: dict, embed_dim: int = 512) -> None:
+    def __init__(self, view_configuration: dict, embed_dim: int = 512) -> None:
         """
         Initialize the multi-view network.
         Args:
-            encoders (dict): A dictionary of encoder modules for each view(layer).
+            view_configuration (dict): A dictionary containing the configuration for each model and preprocessor per view
             embed_dim (int): The dimension of the output embedding from each encoder. Defaults to 512.
 
         Example encoders:
@@ -24,19 +23,39 @@ class MultiViewNet(nn.Module):
         }
         """
         super().__init__()
-        self.encoders = nn.ModuleDict(encoders)
+        self.view_configuration = view_configuration
         self.embed_dim = embed_dim
-        self.num_views = len(encoders)
+        self.num_views = len(view_configuration)
+
+        self.encoders = nn.ModuleDict()
+        # based on the vieq_configuration the model will now create all views specified and will add the live encoders to the list
+        for view_name, config in view_configuration.items():
+            model_type = config["model_type"]
+            input_shape = config["input_shape"]
+
+            # quick check if model actually is present in the MODEL_DICTIONARY
+            if model_type not in MODEL_DICTIONARY:
+                raise KeyError(
+                    "model type specified in view configuration does not exist"
+                )
+
+            model = MODEL_DICTIONARY[model_type]
+            self.encoders[view_name] = model(
+                input_shape=input_shape, embed_dim=self.embed_dim
+            )
 
         # Create an auxiliary head for every banch to get branch
         # specific prediction
         self.aux_heads = nn.ModuleDict(
-            {key: nn.Linear(embed_dim, 2) for key in encoders.keys()}
+            {key: nn.Linear(embed_dim, 2) for key in view_configuration.keys()}
         )
 
-        # Final MLP prediction network
-        self.classifier = MLPLayer(
-            input_size=self.embed_dim * self.num_views, hidden_dim=[256], embed_dim=2
+        # Final MLP prediction network, built using design factory
+        mlp_class = MODEL_DICTIONARY["mlp"]
+        self.classifier = mlp_class(
+            input_shape=(self.embed_dim * self.num_views,),
+            hidden_dim=[256],
+            embed_dim=2,
         )
 
     def forward(self, x_dict: dict) -> dict:
@@ -58,7 +77,7 @@ class MultiViewNet(nn.Module):
             # Save branch logit for deep supervision/mutual learning
             branch_logits[key] = self.aux_heads[key](feat)
 
-        # Average tokens into a 1x512 Global Feature Vector using mean pooling
+        # concatenating embeddings into one big 1d array
         global_feature = torch.cat(list(branch_features.values()), dim=1)
 
         # Final MLP prediction
