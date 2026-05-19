@@ -2,7 +2,7 @@
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.constants import DEFAULT_N_BINS
 
-MODEL_CONFIGURATION = {
+VIEW_CONFIGURATION = {
     "aps": {
         "preprocessor": AzimuthalPowerSpectrumPreprocessor(),
         "model_type": "cnn",  # or mlp
