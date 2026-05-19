@@ -55,7 +55,7 @@ class MLPLayer(LayerTemplate):
         """
         Initialize the MLP layer.
         Args:
-            input_size (int): The size of the input features.
+            input_shape (tuple): The shape of the input data (excluding batch size).
             hidden_dim (list): A list of hidden layer dimensions. Defaults to [256].
             embed_dim (int): The dimension of the output embedding. Defaults to 512.
         """
@@ -95,6 +95,13 @@ class CNNLayer(LayerTemplate):
     def __init__(
         self, input_shape: tuple, arch: str = "resnet18", embed_dim: int = 512
     ) -> None:
+        """
+        Initialize the CNN layer.
+        Args:
+            input_shape (tuple): The shape of the input data (excluding batch size).
+            arch (str): The architecture of the pre-trained model to use. Defaults to "resnet18".
+            embed_dim (int): The dimension of the output embedding. Defaults to 512.
+        """
         self.arch = arch
         self.input_chan = input_shape[0]
         self.embed_dim = embed_dim
