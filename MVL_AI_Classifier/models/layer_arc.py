@@ -12,6 +12,8 @@ def add_model(name: str):
         MODEL_DICTIONARY[name] = class_
         return class_
 
+    return register
+
 
 class LayerTemplate(nn.Module, ABC):
     """
