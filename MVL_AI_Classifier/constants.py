@@ -16,3 +16,7 @@ JPEG_RECENTER_VALUE = 128.0
 # Small constant added to denominators and log arguments to prevent
 # division-by-zero and log(0)
 DEFAULT_EPSILON = 1e-8
+# Default number of bins for histogram-based features (e.g., DCT coefficient histograms).
+DEFAULT_N_BINS = 64
+
+DEFAULT_N_LEVELS = 32

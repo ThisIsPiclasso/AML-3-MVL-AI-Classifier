@@ -3,6 +3,7 @@ import numpy as np
 from features.base_processor import BasePreprocessor
 from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
 from features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.constants import DEFAULT_N_LEVELS
 
 
 class GLCMPreprocessor(BasePreprocessor):
@@ -27,7 +28,7 @@ class GLCMPreprocessor(BasePreprocessor):
 
     def __init__(
         self,
-        n_levels: int = 32,
+        n_levels: int = DEFAULT_N_LEVELS,
         symmetric: bool = True,
     ):
         """Initialize the GLCM preprocessor.
