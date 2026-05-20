@@ -3,24 +3,20 @@ import numpy as np
 from features.base_processor import BasePreprocessor
 from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
 from features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.constants import DEFAULT_N_LEVELS
 
 
 class GLCMPreprocessor(BasePreprocessor):
-    """
-    Compute normalized Gray-Level Co-occurrence Matrices (GLCMs) from a
-    256x256 RGB image patch.
+    """Compute normalized Gray-Level Co-occurrence Matrices from an RGB patch.
 
-    Four spatial offsets are computed:
-        horizontal    (dx=+1, dy= 0)
-        vertical      (dx= 0, dy=+1)
-        diagonal      (dx=+1, dy=+1)
-        anti-diagonal (dx=-1, dy=+1)
+    Four directional spatial offsets are computed:
+        - Horizontal:     ``(dx=+1, dy= 0)``
+        - Vertical:       ``(dx= 0, dy=+1)``
+        - Diagonal:       ``(dx=+1, dy=+1)``
+        - Anti-diagonal:  ``(dx=-1, dy=+1)``
 
-    Output
-    ------
-    np.ndarray of shape (4, n_levels, n_levels), dtype float32.
-        Normalized co-occurrence probabilities.
-        axis 0 order: [horizontal, vertical, diagonal, anti_diagonal]
+    Pixel intensities are quantized from 256 levels down to ``n_levels``
+    discrete bins using quantization over the [0, 255] range.
     """
 
     _OFFSETS = [
@@ -32,21 +28,20 @@ class GLCMPreprocessor(BasePreprocessor):
 
     def __init__(
         self,
-        n_levels: int = 32,
+        n_levels: int = DEFAULT_N_LEVELS,
         symmetric: bool = True,
     ):
-        """
-        Parameters
-        ----------
-        n_levels : int
-            Number of quantization levels for intensity space, default 32.
-        symmetric : bool
-            If True, GLCM is symmetrized: G = G + G.T.
-        """
-        if not isinstance(n_levels, (int, np.integer)) or n_levels <= 0:
-            raise ValueError("n_levels must be a positive integer.")
+        """Initialize the GLCM preprocessor.
 
-        # 256 possible levels of brightness per pixel, reduced to n_levels for robustness
+        Args:
+            n_levels: Number of discrete intensity bins for quantization.
+                Default 32 gives a good balance of sensitivity and robustness
+            symmetric: If True, GLCM is symmetrized via ``G = G + G.T``,
+                treating co-occurrence of ``(i, j)`` and ``(j, i)`` as
+                equivalent. 
+        """
+
+        # Maps pixel values [0, 255] → [0, n_levels)
         self.n_levels = int(n_levels)
         self.symmetric = symmetric
         self._scale = np.float32(self.n_levels / 255.0)
@@ -56,52 +51,87 @@ class GLCMPreprocessor(BasePreprocessor):
 
     def _compute_glcm(
         self,
-        qimg: np.ndarray,
-        dx: int,
-        dy: int,
+        quantized_image: np.ndarray,
+        offset_x: int,
+        offset_y: int,
     ) -> np.ndarray:
+        """Compute one normalized GLCM for a single spatial offset.
+
+        For every valid pixel pair (reference, neighbor) at the given
+        offset, counts co-occurrences of intensity levels and normalizes
+        to a probability distribution.
+
+        Args:
+            quantized_image: Integer array of shape ``(H, W)`` with
+                values in ``[0, n_levels - 1]``.
+            offset_x: Horizontal displacement from reference to neighbor.
+            offset_y: Vertical displacement from reference to neighbor.
+
+        Returns:
+            Normalized co-occurrence matrix of shape
+            ``(n_levels, n_levels)`` as float32. Values are
+            probabilities that sum to 1.0.
         """
-        Compute one normalized GLCM for spatial offset (dx, dy).
+        height, width = quantized_image.shape
 
-        Returns
-        -------
-        np.ndarray of shape (n_levels, n_levels), dtype float32.
-        """
-        h, w = qimg.shape  # quantized image shape
+        # Compute valid index ranges for reference and neighbor pixels.
+        # max(0, -offset) and max(0, offset) handle both positive and
+        # negative offsets to exclude out-of-bounds pairs.
+        #
+        # Example for offset_y=1 (vertical, looking down):
+        #   reference rows: [0, height-1)  — all rows except the last
+        #   neighbor rows:  [1, height)    — all rows except the first
+        #   Each ref[y] pairs with nb[y] = ref[y] + 1
+        y_ref = slice(max(0, -offset_y), height - max(0, offset_y))
+        y_nb = slice(max(0, offset_y), height - max(0, -offset_y))
+        x_ref = slice(max(0, -offset_x), width - max(0, offset_x))
+        x_nb = slice(max(0, offset_x), width - max(0, -offset_x))
 
-        # determine valid pixel pairs
-        y_ref = slice(max(0, -dy), h - max(0, dy))
-        y_nb = slice(max(0, dy), h - max(0, -dy))
-        x_ref = slice(max(0, -dx), w - max(0, dx))
-        x_nb = slice(max(0, dx), w - max(0, -dx))
 
-        # create two aligned vectors for reference and neighbor pixels
-        # ravel flattens arrays into vectors
-        ref = qimg[y_ref, x_ref].ravel()
-        nb = qimg[y_nb, x_nb].ravel()
+        # Extract aligned reference and neighbor pixel arrays.
+        # ravel() flattens to 1D
+        reference_levels = quantized_image[y_ref, x_ref].ravel()
+        neighbor_levels = quantized_image[y_nb, x_nb].ravel()
 
-        # count matrix with row = reference intensity, column = neighbor intensity
-        G = np.zeros((self.n_levels, self.n_levels), dtype=np.float32)
-        np.add.at(G, (ref, nb), np.float32(1.0))
+        # Build co-occurrence count matrix.
+        # G[i, j] = number of times intensity level i appears adjacent
+        # to intensity level j at the specified spatial offset.
+        co_occurence_matrix = np.zeros((self.n_levels, self.n_levels), dtype=np.float32)
+        
+        #duplicate handling
+        np.add.at(co_occurence_matrix, (reference_levels, neighbor_levels), np.float32(1.0))
 
-        if self.symmetric:  # (3,7) == (7,3)
-            G = G + G.T
+        # Symmetrize: treat (i→j) and (j→i) as equivalent.
+        # This doubles all counts and makes G[i,j] = G[j,i].
+        if self.symmetric:
+            co_occurence_matrix = co_occurence_matrix + co_occurence_matrix.T
 
-        # normalization
-        total = G.sum()
+        # normalization to probabilities
+        total = co_occurence_matrix.sum()
         if total > 0:
-            G /= total
+            co_occurence_matrix /= total
 
-        return G
+        return co_occurence_matrix
 
     def __call__(self, image_patch: np.ndarray) -> np.ndarray:
+        """Compute normalized GLCMs for four spatial directions.
+
+        Args:
+            image_patch: RGB image of shape ``(PATCH_SIZE, PATCH_SIZE, 3)``
+
+        Returns:
+            GLCM tensor of shape ``(4, n_levels, n_levels)`` as float32.
+            Axis 0 order: [horizontal, vertical, diagonal, anti_diagonal].
+            Each ``(n_levels, n_levels)`` slice is a normalized probability
+            matrix.
+        """
         image = self._normalization(image_patch)
         gray = self._to_gray(image)
         gray_q = np.floor(gray * self._scale).astype(np.int32)
-        gray_q = np.clip(gray_q, 0, self.n_levels - 1)
+        gray_q = np.clip(gray_q, 0, self.n_levels - 1) # Clip handles the edge case where value=255 produces bin index 16.
 
         glcms = np.stack(
-            [self._compute_glcm(gray_q, dx, dy) for dx, dy in self._OFFSETS],
+            [self._compute_glcm(gray_q, offset_x, offset_y) for offset_x, offset_y in self._OFFSETS],
             axis=0,
         )  # (4, n_levels, n_levels), float32
 
