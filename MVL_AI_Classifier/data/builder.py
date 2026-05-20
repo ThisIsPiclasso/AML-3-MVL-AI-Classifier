@@ -6,7 +6,15 @@ from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
 
-from ..constants import DEFAULT_EPSILON, DEFAULT_AI_PATH, DEFAULT_NATURE_PATH
+from ..constants import (
+    DEFAULT_EPSILON,
+    DEFAULT_AI_PATH,
+    DEFAULT_NATURE_PATH,
+    DEFAULT_SEED,
+    DEFAULT_TRAIN_SPLIT,
+    DEFAULT_VAL_SPLIT,
+    DEFAULT_TEST_SPLIT,
+)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 NAME_MAP = {
@@ -116,7 +124,7 @@ class DatasetBuilder:
             print("No data to sample.")
             return
         self.data = self.data.groupby(["label", "model_type"]).sample(
-            n=self.size, random_state=42
+            n=self.size, random_state=DEFAULT_SEED
         )
 
     def read(self, name: str = "data/dataset.parquet"):
@@ -130,7 +138,10 @@ class DatasetBuilder:
         self.data = pd.read_parquet(path)
 
     def split(
-        self, train_size: float = 0.8, val_size: float = 0.1, test_size: float = 0.1
+        self,
+        train_size: float = DEFAULT_TEST_SPLIT,
+        val_size: float = DEFAULT_VAL_SPLIT,
+        test_size: float = DEFAULT_TEST_SPLIT,
     ) -> None:
         """
         Split the dataset into training, validation, and test sets based on specified ratios.
@@ -153,7 +164,7 @@ class DatasetBuilder:
             )
 
         # Shuffeling the data in order to create a random split
-        df = self.data.sample(frac=1, random_state=42).reset_index(drop=True)
+        df = self.data.sample(frac=1, random_state=DEFAULT_SEED).reset_index(drop=True)
         total_len = len(df)
 
         # Setting boundries for the split
@@ -182,9 +193,9 @@ class DatasetBuilder:
     def __call__(
         self,
         output_path: str = "data/dataset.parquet",
-        train_size: float = 0.8,
-        val_size: float = 0.1,
-        test_size: float = 0.1,
+        train_size: float = DEFAULT_TRAIN_SPLIT,
+        val_size: float = DEFAULT_VAL_SPLIT,
+        test_size: float = DEFAULT_TEST_SPLIT,
     ) -> None:
         """
         Execute the full dataset building process, including scanning for images, filtering, undersampling,
@@ -202,7 +213,7 @@ class DatasetBuilder:
         self.filter()
 
         # Balance dataset representation
-        # self.undersample()
+        self.undersample()
 
         # Split the data into train/validation/test
         self.split(train_size=train_size, val_size=val_size, test_size=test_size)

@@ -23,3 +23,11 @@ DEFAULT_N_LEVELS = 32
 
 DEFAULT_AI_PATH = "./data/subset/ai"
 DEFAULT_NATURE_PATH = "./data/subset/nature"
+
+# Default seed used for reproductibility
+DEFAULT_SEED = 42
+
+# Default training/validation/testing split
+DEFAULT_TRAIN_SPLIT = 0.8
+DEFAULT_VAL_SPLIT = 0.1
+DEFAULT_TEST_SPLIT = 0.1
