@@ -4,7 +4,7 @@ import pandas as pd
 from PIL import Image
 import numpy as np
 
-PATCH_SIZE = 256
+from constants import PATCH_SIZE
 
 
 class DataClass(Dataset):
