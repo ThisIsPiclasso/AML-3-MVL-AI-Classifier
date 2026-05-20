@@ -6,8 +6,7 @@ from pathlib import Path
 from PIL import Image
 from tqdm.auto import tqdm
 
-from ..constants import DEFAULT_EPSILON as epsilon
-
+from ..constants import DEFAULT_EPSILON, DEFAULT_AI_PATH, DEFAULT_NATURE_PATH
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 NAME_MAP = {
@@ -22,13 +21,20 @@ NAME_MAP = {
 
 
 class DatasetBuilder:
-    def __init__(self, size: int = 1000, root: str = "./data/subset"):
+    def __init__(
+        self,
+        size: int = 1000,
+        ai_path: str = DEFAULT_AI_PATH,
+        nature_path: str = DEFAULT_NATURE_PATH,
+    ) -> None:
         """Initialize the DatasetBuilder with a specified size and root directory.
         Args:
             size (int): The number of samples to include in the final dataset after undersampling.
-            root (str): The root directory to scan for images.
+            ai_path (str): The path to the directory containing AI-generated images.
+            nature_path (str): The path to the directory containing natural images.
         """
-        self.root_dir = Path(root).resolve()
+        self.ai_path = Path(ai_path).resolve()
+        self.nature_path = Path(nature_path).resolve()
         self.data = pd.DataFrame()
         self.size = size
 
@@ -38,10 +44,17 @@ class DatasetBuilder:
             list: A list of file paths for images found in the root directory and its subdirectories.
         """
         file_paths = []
-        for root, dirs, files in os.walk(self.root_dir):
-            for file in files:
-                if any(file.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
-                    file_paths.append(os.path.join(root, file))
+        combined_paths = [self.ai_path, self.nature_path]
+        for target_path in combined_paths:
+            if not target_path.exists():
+                print(
+                    f"Warning: Path {target_path} does not exist. Please check your structure."
+                )
+                continue
+            for root, dirs, files in os.walk(target_path):
+                for file in files:
+                    if any(file.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS):
+                        file_paths.append(os.path.join(root, file))
         print(f"{len(file_paths):,} images found")
         return file_paths
 
@@ -55,26 +68,20 @@ class DatasetBuilder:
         file_paths = self._get_paths()
         for file_path in tqdm(file_paths, desc="parsing img"):
             try:
-                file_size = os.path.getsize(file_path)
-
                 with Image.open(file_path) as img:
                     w, h = img.size
                     path_obj = Path(file_path)
                     folder_name = path_obj.parent.name
                     model_type = NAME_MAP.get(folder_name, folder_name)
                     parts = [p.lower() for p in path_obj.parts]
-                    category = "ai" if "ai" in parts else "nature"
+                    label = 1 if "ai" in parts else 0
 
                     image_records.append(
                         {
                             "path": file_path,
                             "filename": path_obj.name,
                             "model_type": model_type,
-                            "category": category,
-                            "width": w,
-                            "height": h,
-                            "size_bytes": file_size,
-                            "format": img.format,
+                            "label": label,
                         }
                     )
             except Exception as e:
@@ -139,7 +146,7 @@ class DatasetBuilder:
             return
 
         total_size = train_size + val_size + test_size
-        if not abs(total_size - 1.0) < epsilon:
+        if not abs(total_size - 1.0) < DEFAULT_EPSILON:
             raise ValueError(
                 f"The split ratios must sum to 1.0. Currently they sum to {total_size} "
                 f"(Train: {train_size}, Val: {val_size}, Test: {test_size})"
