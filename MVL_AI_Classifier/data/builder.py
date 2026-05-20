@@ -115,7 +115,7 @@ class DatasetBuilder:
         if self.data.empty:
             print("No data to sample.")
             return
-        self.data = self.data.groupby(["category", "model_type"]).sample(
+        self.data = self.data.groupby(["label", "model_type"]).sample(
             n=self.size, random_state=42
         )
 
@@ -202,7 +202,7 @@ class DatasetBuilder:
         self.filter()
 
         # Balance dataset representation
-        self.undersample()
+        # self.undersample()
 
         # Split the data into train/validation/test
         self.split(train_size=train_size, val_size=val_size, test_size=test_size)
