@@ -57,7 +57,7 @@ class DataClass(Dataset):
             y = (height - patch_size) // 2
         else:
             seed = int(self.current_epoch * 997 + idx)
-            rng = np.random.default_generator(np.random.PCG64(seed))
+            rng = np.random.default_rng(np.random.PCG64(seed))
 
             max_x = width - patch_size
             max_y = height - patch_size
