@@ -8,7 +8,20 @@ MODEL_DICTIONARY = {}
 
 
 def add_model(name: str):
-    def register(class_):
+    """A decorator to register a model class in the MODEL_DICTIONARY.
+    Args:
+        name (str): The name of the model to register.
+    Returns:
+        function: The register function that adds the class to the MODEL_DICTIONARY.
+    """
+
+    def register(class_: type) -> type:
+        """Registers the class in the MODEL_DICTIONARY under the specified name.
+        Args:
+            class_ (type): The class to register.
+        Returns:
+            type: The registered class.
+        """
         MODEL_DICTIONARY[name] = class_
         return class_
 

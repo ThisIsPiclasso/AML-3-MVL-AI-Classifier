@@ -16,10 +16,13 @@ class MultiViewNet(nn.Module):
             view_configuration (dict): A dictionary containing the configuration for each model and preprocessor per view
             embed_dim (int): The dimension of the output embedding from each encoder. Defaults to 512.
 
-        Example encoders:
-        encoders = {
-            "azimuthal": MLPLayer(input_size=128, embed_dim=512),
-            "noise": CNNLayer(arch="resnet18", input_chan=3),
+        Example view_configuration:
+        VIEW_CONFIGURATION = {
+            "aps": {
+                    "preprocessor": AzimuthalPowerSpectrumPreprocessor(),
+                    "model_type": "cnn",  # or mlp
+                    "input_shape": (DEFAULT_N_BINS,),
+            },
         }
         """
         super().__init__()
