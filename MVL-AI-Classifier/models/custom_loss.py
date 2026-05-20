@@ -5,6 +5,10 @@ It sums:
 1) Fusion cross-entropy loss (main prediction),
 2) Branch cross-entropy losses (auxiliary supervision),
 3) Pairwise KL-based distillation between branches to enforce consistency
+
+# Teacher logits are raw prediction scores from a larger, pre-trained model (the "expert"),
+# while student logits are raw scores from the smaller model being trained to mimic the teacher.
+# Both are unnormalized outputs (before softmax) and are compared during knowledge distillation.
 """
 import torch.nn as nn
 import torch.nn.functional as F
