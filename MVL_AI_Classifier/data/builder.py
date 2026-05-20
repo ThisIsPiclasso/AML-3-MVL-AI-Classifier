@@ -14,18 +14,9 @@ from ..constants import (
     DEFAULT_TRAIN_SPLIT,
     DEFAULT_VAL_SPLIT,
     DEFAULT_TEST_SPLIT,
+    ALLOWED_EXTENSIONS,
+    NAME_MAP,
 )
-
-ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-NAME_MAP = {
-    "adm": "ADM",
-    "glide": "Glide",
-    "midjourney": "Midjourney",
-    "sdv4": "Stable Diffusion v1.4",
-    "sdv5": "Stable Diffusion v1.5",
-    "vqdm": "VQDM",
-    "wukong": "Wukong",
-}
 
 
 class DatasetBuilder:
