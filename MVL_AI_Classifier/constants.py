@@ -20,3 +20,6 @@ DEFAULT_EPSILON = 1e-8
 DEFAULT_N_BINS = 64
 
 DEFAULT_N_LEVELS = 32
+
+DEFAULT_AI_PATH = "./data/subset/ai"
+DEFAULT_NATURE_PATH = "./data/subset/nature"
