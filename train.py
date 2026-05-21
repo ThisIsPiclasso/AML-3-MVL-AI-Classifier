@@ -12,15 +12,18 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     PATCH_SIZE,
     NUM_EPOCHS,
+    TRAIN_CACHE,
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
+from MVL_AI_Classifier.data.cached_dataset import CachedDataClass
 from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
 from MVL_AI_Classifier.features.noise_residuals_pipeline import (
     NoiseResidualPreprocessor,
 )
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
 
 MODEL_CONFIGURATION = {
     "aps": {
@@ -54,19 +57,30 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
     writer = SummaryWriter(log_dir="runs/multiview_experiment_1")
-    train_data = DataClass(
-        parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="train"
-    )
+
+    # ----------------------------------------Normal preprocessing-----------------------------------------------------
+    # train_data = DataClass(
+    #     parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="train"
+    # )
     val_data = DataClass(
         parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="val"
     )
 
+    # -------------------------------------Cached Preprocessing -----------------------------------------------
+    active_views = list(MODEL_CONFIGURATION.keys())
+    train_data = CachedDataClass(hdf5_path=TRAIN_CACHE, view_keys=active_views)
+
+    # val_data = CachedDataClass(
+    #    hdf5_path=VAL_CACHE,
+    #    view_keys=active_views
+    # )
+    # -----------------------------------------------------------------------------------------------------
     train_loader = DataLoader(
         train_data,
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=NUM_WORKERS,
-        pin_memory=True,
+        pin_memory=False,
         persistent_workers=True,
         prefetch_factor=4,
     )

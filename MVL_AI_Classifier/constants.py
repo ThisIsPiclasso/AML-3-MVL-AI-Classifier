@@ -34,6 +34,7 @@ NAME_MAP = {
     "vqdm": "VQDM",
     "wukong": "Wukong",
 }
+SAMPLE_SIZE = 1000
 
 # Default seed used for reproductibility
 DEFAULT_SEED = 42
@@ -44,7 +45,10 @@ DEFAULT_VAL_SPLIT = 0.1
 DEFAULT_TEST_SPLIT = 0.1
 
 # Defaults for training
-PARQUET_FILE = "./data/dataset.parquet"
+PARQUET_FILE = "./data/data_parquet/dataset.parquet"
 BATCH_SIZE = 64
-NUM_WORKERS = 12
+NUM_WORKERS = 4
 NUM_EPOCHS = 15
+TRAIN_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/train_features.h5"
+VAL_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/val_features.h5"
+TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h5"

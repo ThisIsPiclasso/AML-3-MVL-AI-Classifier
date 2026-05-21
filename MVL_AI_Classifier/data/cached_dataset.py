@@ -3,47 +3,43 @@ import torch
 from torch.utils.data import Dataset
 
 
-class CachedMultiViewDataset(Dataset):
-    """
-    This is a caching class that allows us to precompute the tensors for each view beforehand and store them.
-    This speeds up training time by a lot since we are not CPU bottlenecked.
-    drawback is that we lose the random patching per epoch, but a small price for the speedup
-
-    important note is that any changes to view configuration requires a rebuild of this cache.
-    """
-
-    def __init__(
-        self,
-        hdf5_path: str = "/workspace/AML-3-MVL-AI-Classifier/data_cache/features.h5",
-        view_keys: list = None,
-    ):
+class CachedDataClass(Dataset):
+    def __init__(self, hdf5_path: str, view_keys: list):
         super().__init__()
-        self.hdf5_path = hdf5_path
-        self.file_handle = None
-
         self.view_keys = view_keys
 
-        # read file
-        with h5py.File(self.hdf5_path, "r") as f:
-            self.dataset_length = len(f["label"])
+        print(f"🧠 Loading HDF5 data matrix completely into RAM from: {hdf5_path}")
+
+        # Open the file once, read everything into memory arrays, and close the file handle immediately!
+        with h5py.File(hdf5_path, "r") as f:
+            # Reconstruct classification labels directly as a continuous PyTorch Tensor
+            self.labels = torch.from_numpy(f["label"][:]).long()
+            self.dataset_length = len(self.labels)
+
+            # Read the feature views entirely into memory matrices
+            self.in_memory_views = {}
+            for view_name in self.view_keys:
+                print(f"   -> Sucking '{view_name}' matrix into RAM layout...")
+                # The [:] operator forces h5py to load the entire binary block into a NumPy array
+                raw_numpy_array = f[view_name][:]
+                self.in_memory_views[view_name] = torch.from_numpy(
+                    raw_numpy_array
+                ).float()
+
+        print(
+            "✅ System RAM array allocation completed successfully. File handle closed safely."
+        )
 
     def __len__(self) -> int:
         return self.dataset_length
 
-    def __getitem__(self, idx: int) -> dict:
-        # fix for multi threading
-        if self.file_handle is None:
-            self.file_handle = h5py.File(self.hdf5_path, "r")
+    def set_epoch(self, epoch: int):
+        pass
 
-        # build the views as saved in the cache
+    def __getitem__(self, idx: int) -> dict:
+        # Pull slices straight out of your ultra-fast system RAM matrix allocations
         view_outputs = {}
         for view_name in self.view_keys:
-            # read from cache
-            raw_array = self.file_handle[view_name][idx]
-            view_outputs[view_name] = torch.from_numpy(raw_array).float()
+            view_outputs[view_name] = self.in_memory_views[view_name][idx]
 
-        # extract labels from cache
-        label = self.file_handle["label"][idx]
-
-        # return in correct format
-        return {"views": view_outputs, "label": torch.tensor(label, dtype=torch.long)}
+        return {"views": view_outputs, "label": self.labels[idx]}

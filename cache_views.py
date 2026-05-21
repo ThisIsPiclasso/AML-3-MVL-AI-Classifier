@@ -4,6 +4,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 from MVL_AI_Classifier.data.dataclass import DataClass
+from MVL_AI_Classifier.constants import PARQUET_FILE
 
 
 def compile_split_cache(
@@ -12,6 +13,7 @@ def compile_split_cache(
     original_dataset = DataClass(
         parquet_file=parquet_file, view_configuration=view_config, split=split
     )
+    print(len(original_dataset))
 
     if split == "train":
         original_dataset.set_epoch(0)
@@ -63,7 +65,6 @@ def compile_split_cache(
 
 
 def main():
-    PARQUET_PATH = "/workspace/AML-3-MVL-AI-Classifier/data/dataset.parquet"
     CACHE_DIR = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
     os.makedirs(CACHE_DIR, exist_ok=True)
 
@@ -82,7 +83,7 @@ def main():
             continue
 
         compile_split_cache(
-            parquet_file=PARQUET_PATH,
+            parquet_file=PARQUET_FILE,
             view_config=MODEL_CONFIGURATION,
             split=split_name,
             save_path=file_save_path,

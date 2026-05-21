@@ -16,13 +16,15 @@ from ..constants import (
     DEFAULT_TEST_SPLIT,
     ALLOWED_EXTENSIONS,
     NAME_MAP,
+    PARQUET_FILE,
+    SAMPLE_SIZE,
 )
 
 
 class DatasetBuilder:
     def __init__(
         self,
-        size: int = 1000,
+        size: str = SAMPLE_SIZE,
         ai_path: str = DEFAULT_AI_PATH,
         nature_path: str = DEFAULT_NATURE_PATH,
     ) -> None:
@@ -90,7 +92,7 @@ class DatasetBuilder:
         print(f"Skipped {len(errors)} files due to errors.")
         self.data = pd.DataFrame(image_records)
 
-    def save(self, name: str = "data/dataset.parquet"):
+    def save(self, name: str = PARQUET_FILE):
         """Save the dataset to a Parquet file.
         Args:
             name (str): The file path where the dataset will be saved. Defaults to "data/dataset.parquet".
@@ -118,7 +120,7 @@ class DatasetBuilder:
             n=self.size, random_state=DEFAULT_SEED
         )
 
-    def read(self, name: str = "data/dataset.parquet"):
+    def read(self, name: str = PARQUET_FILE):
         """Read the dataset from a Parquet file.
         Args:
             name (str): The file path from which to read the dataset. Defaults to "data/dataset.parquet".
@@ -183,7 +185,7 @@ class DatasetBuilder:
 
     def __call__(
         self,
-        output_path: str = "data/dataset.parquet",
+        output_path: str = PARQUET_FILE,
         train_size: float = DEFAULT_TRAIN_SPLIT,
         val_size: float = DEFAULT_VAL_SPLIT,
         test_size: float = DEFAULT_TEST_SPLIT,
