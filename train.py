@@ -19,6 +19,8 @@ from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
 from MVL_AI_Classifier.features.noise_residuals_pipeline import (
     NoiseResidualPreprocessor,
 )
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 MODEL_CONFIGURATION = {
     "aps": {
@@ -51,7 +53,7 @@ MODEL_CONFIGURATION = {
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
-
+    writer = SummaryWriter(log_dir="runs/multiview_experiment_1")
     train_data = DataClass(
         parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="train"
     )
@@ -60,7 +62,13 @@ def main():
     )
 
     train_loader = DataLoader(
-        train_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS
+        train_data,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
     )
     val_loader = DataLoader(
         val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
@@ -88,19 +96,26 @@ def main():
             f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} - "
             f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
+        writer.add_scalar("Loss/Train", train_loss, epoch)
+        writer.add_scalar("Loss/Val", val_loss, epoch)
+        writer.add_scalar("Accuracy/Train", train_acc, epoch)
+        writer.add_scalar("Accuracy/Val", val_acc, epoch)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), "best_multiview_model.pt")
+    writer.close()
+    print("training done")
 
 
 def train_epoch(model, dataloader, optimizer, loss_function, device):
+    progress = tqdm(dataloader, desc="Training...", leave=True)
     model.train()
     # intitalize trackers for this epoch
     running_loss = 0.0
     correct_fusion = 0
     total_samples = 0
 
-    for batch in dataloader:
+    for batch_idx, batch in enumerate(progress):
         # the dataloader takes a batch of images to process at the same time
         # moves all preproccessed views, and all labels into vram
         x_dict = {key: tensor.to(device) for key, tensor in batch["views"].items()}
@@ -124,6 +139,11 @@ def train_epoch(model, dataloader, optimizer, loss_function, device):
         correct_fusion += (predictions == y).sum().item()
         # add the current amount of processed images to runnning total
         total_samples += y.size(0)
+        current_loss = total_loss.item()
+        current_acc = (correct_fusion / total_samples) * 100
+        progress.set_postfix(
+            {"Loss": f"{current_loss:.4f}", "Fusion_Acc": f"{current_acc:.2f}%"}
+        )
     epoch_loss = running_loss / total_samples
     epoch_acc = (correct_fusion / total_samples) * 100
     return epoch_loss, epoch_acc
@@ -157,3 +177,7 @@ def validate(model, dataloader, loss_function, device):
     val_loss = running_loss / total_samples
     val_acc = (correct_fusion / total_samples) * 100
     return val_loss, val_acc
+
+
+if __name__ == "__main__":
+    main()

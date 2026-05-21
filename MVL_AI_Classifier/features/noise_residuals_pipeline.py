@@ -1,9 +1,11 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE
-from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
+from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
+    RGBNormalizationPreprocessor,
+)
 
 
 class NoiseResidualPreprocessor(BasePreprocessor):
@@ -142,18 +144,14 @@ class NoiseResidualPreprocessor(BasePreprocessor):
         # Mean-center each window independently to remove local luminance.
         # This ensures correlation measures noise pattern similarity,
         # not brightness similarity.
-        centered_a = channel_a_windows - channel_a_windows.mean(
-            axis=-1, keepdims=True
-        )
-        centered_b = channel_b_windows - channel_b_windows.mean(
-            axis=-1, keepdims=True
-        )
+        centered_a = channel_a_windows - channel_a_windows.mean(axis=-1, keepdims=True)
+        centered_b = channel_b_windows - channel_b_windows.mean(axis=-1, keepdims=True)
         # Shape: (windows_per_dim, windows_per_dim, window_size²) each
 
         # Pearson formula: r = Σ(a·b) / sqrt(Σa² · Σb²)
         covariance = (centered_a * centered_b).sum(axis=-1)
-        sum_sq_a = (centered_a ** 2).sum(axis=-1)
-        sum_sq_b = (centered_b ** 2).sum(axis=-1)
+        sum_sq_a = (centered_a**2).sum(axis=-1)
+        sum_sq_b = (centered_b**2).sum(axis=-1)
         # Shape: (windows_per_dim, windows_per_dim) each
 
         # Detect degenerate windows where one or both channels have

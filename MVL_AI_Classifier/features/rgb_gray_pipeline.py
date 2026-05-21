@@ -1,6 +1,7 @@
 import numpy as np
 
-from features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
+
 
 class RGBToGrayPreprocessor(BasePreprocessor):
     """Convert a float32 RGB image to single-channel grayscale.

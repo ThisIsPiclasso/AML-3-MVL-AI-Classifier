@@ -7,3 +7,6 @@ venv/
 data/raw
 data/subset
 data/subset.zip
+runs/
+data/data_cache
+trained_model.pt

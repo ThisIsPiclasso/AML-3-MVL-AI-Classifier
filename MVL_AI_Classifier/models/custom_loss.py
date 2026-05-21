@@ -156,50 +156,50 @@ class MultiViewLoss(nn.Module):
 
     def forward(self, outputs: dict, target: torch.Tensor) -> dict:
         """
-        Compute full multi-view loss.
-
-        Expected outputs dictionary format:
-        {
-            "fusion": Tensor,  # main prediction head
-            "aps": Tensor,     # branch 1
-            "noise": Tensor,   # branch 2
-            "glcm": Tensor,    # branch 3
-            "dct": Tensor      # branch 4
-        }
-
-        Args:
-            outputs (dict): Model outputs from multiple branches.
-            target (Tensor): Ground-truth labels.
-
-        Returns:
-            dict: Dictionary of total and component losses.
+        Compute full multi-view loss by safely unpacking nested dictionaries.
         """
-
-        # Main fusion prediction loss (primary objective)
+        # 1. Primary fusion prediction loss (main head objective)
         fusion_pred = outputs["fusion"]
         fusion_loss = self.classification_loss(fusion_pred, target)
 
-        # Collect all branch predictions
-        branch_preds = [
-            outputs["aps"],
-            outputs["noise"],
-            outputs["glcm"],
-            outputs["dct"],
-        ]
+        total_branch_loss = 0.0
+        kd_loss = 0.0
 
-        # Supervised loss for each branch
-        branch_loss = self.branch_loss(branch_preds, target)
+        # 2. Extract logits safely from the nested "branches" sub-dictionary
+        if "branches" in outputs and isinstance(outputs["branches"], dict):
+            branch_dict = outputs["branches"]
 
-        # Knowledge distillation between branches
-        kd_loss = self.distillation_loss(branch_preds)
+            # Convert the active logits dictionary values directly into a clean list of tensors
+            branch_preds = list(branch_dict.values())
 
-        # Weighted combination of all losses
-        total_loss = fusion_loss + self.alpha * branch_loss + self.beta * kd_loss
+            if len(branch_preds) > 0:
+                # Calculate supervised cross-entropy for each active branch
+                for pred in branch_preds:
+                    total_branch_loss += self.classification_loss(pred, target)
 
-        # Return structured logging dictionary
+                # 3. Calculate cross-branch mutual learning knowledge distillation
+                total_kd_loss = 0.0
+                kd_count = 0
+
+                # Pairwise bidirectional loops over the active branch tensors
+                for i in range(len(branch_preds)):
+                    for j in range(len(branch_preds)):
+                        if i != j:  # Cross-distill symmetrically: i -> j AND j -> i
+                            total_kd_loss += self.kd(branch_preds[i], branch_preds[j])
+                            kd_count += 1
+
+                if kd_count > 0:
+                    kd_loss = total_kd_loss / kd_count
+
+        # 4. Final Weighted Combination
+        total_loss = (
+            fusion_loss + (self.alpha * total_branch_loss) + (self.beta * kd_loss)
+        )
+
+        # Return structured metrics for TensorBoard tracking
         return {
             "total_loss": total_loss,
             "fusion_loss": fusion_loss,
-            "branch_loss": branch_loss,
+            "branch_loss": total_branch_loss,
             "kd_loss": kd_loss,
         }

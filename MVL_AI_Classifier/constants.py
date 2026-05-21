@@ -46,5 +46,5 @@ DEFAULT_TEST_SPLIT = 0.1
 # Defaults for training
 PARQUET_FILE = "./data/dataset.parquet"
 BATCH_SIZE = 64
-NUM_WORKERS = 4
+NUM_WORKERS = 12
 NUM_EPOCHS = 15
