@@ -3,8 +3,6 @@ import h5py
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 
-# ─── EXTERNAL IMPORT (LEAVE YOUR ORIGINAL CLASS FILE UNTOUCHED) ──────────────
-# Modify this path to match your exact directory structure layout
 from MVL_AI_Classifier.data.dataclass import DataClass
 
 
@@ -18,15 +16,13 @@ def compile_split_cache(
     if split == "train":
         original_dataset.set_epoch(0)
 
-    # ─── 1. INCREASE EXTRACTION BATCH SIZE ───────────────────────────────────
-    # Pulling 64 samples at a time allows the 12 CPU workers to actually work!
     extraction_batch_size = 64
     loader = DataLoader(
         original_dataset,
         batch_size=extraction_batch_size,
         num_workers=12,
         shuffle=False,
-        drop_last=False,  # Keep every single sample
+        drop_last=False,
     )
 
     num_samples = len(original_dataset)
@@ -46,39 +42,31 @@ def compile_split_cache(
 
         label_storage = f.create_dataset("label", shape=(num_samples,), dtype="int64")
 
-        # ─── 2. BATCH SLICE WRITING ──────────────────────────────────────────
         current_idx = 0
-        pbar = tqdm(loader, desc=f"💾 Baking {split.upper()} Cache")
+        pbar = tqdm(loader, desc=f"caching{split.upper()} to file")
 
         for batch in pbar:
             views_dict = batch["views"]
             label_tensor = batch["label"]
 
-            # Find out exactly how many items came in this batch block
             actual_batch_size = label_tensor.shape[0]
             end_idx = current_idx + actual_batch_size
 
-            # Write the entire batch block to disk in a single C++ call
             for view_name in active_view_keys:
-                # views_dict[view_name] is already shaped perfectly as (B, C, H, W)
                 dataset_storage[view_name][current_idx:end_idx] = views_dict[
                     view_name
                 ].numpy()
 
             label_storage[current_idx:end_idx] = label_tensor.numpy()
 
-            # Shift the disk index pointer forward
             current_idx = end_idx
 
 
 def main():
-    # ─── ASSIGN YOUR ENVIRONMENT PATH ENGINES ────────────────────────────────
     PARQUET_PATH = "/workspace/AML-3-MVL-AI-Classifier/data/dataset.parquet"
     CACHE_DIR = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-    # Pass your active master configurations directly here
-    # (Assuming MODEL_CONFIGURATION contains your instantiated preprocessor objects)
     from train import MODEL_CONFIGURATION
 
     splits_to_process = {
@@ -90,7 +78,7 @@ def main():
     # Loop over and process each file sequentially
     for split_name, file_save_path in splits_to_process.items():
         if os.path.exists(file_save_path):
-            print(f"⚠️ {file_save_path} already exists! Skipping compilation...")
+            print(f"{file_save_path} already exists. skipping")
             continue
 
         compile_split_cache(
@@ -99,7 +87,7 @@ def main():
             split=split_name,
             save_path=file_save_path,
         )
-        print(f"✅ Securely archived {split_name} cache file data structure.")
+        print(f"archived {split_name} cache file data structure.")
 
 
 if __name__ == "__main__":
