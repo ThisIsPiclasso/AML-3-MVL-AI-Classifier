@@ -10,8 +10,10 @@ It sums:
 # while student logits are raw scores from the smaller model being trained to mimic the teacher.
 # Both are unnormalized outputs (before softmax) and are compared during knowledge distillation.
 """
+
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
 
 
 class DistillationLoss(nn.Module):
@@ -34,7 +36,9 @@ class DistillationLoss(nn.Module):
         # KL divergence loss expects log-probabilities as input
         self.kl = nn.KLDivLoss(reduction="batchmean")
 
-    def forward(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, student_logits: torch.Tensor, teacher_logits: torch.Tensor
+    ) -> torch.Tensor:
         """
         Compute KL divergence between student and teacher distributions.
 
@@ -49,7 +53,7 @@ class DistillationLoss(nn.Module):
         t = self.temperature
 
         # Apply temperature (Temperature controls how soft or sharp the model’s predicted probabilities are) scaling:
-        # Student uses log_softmax 
+        # Student uses log_softmax
         # Teacher uses softmax to form target probability distribution
         student_log_probs = F.log_softmax(student_logits / t, dim=1)
         teacher_probs = F.softmax(teacher_logits / t, dim=1)
@@ -89,7 +93,9 @@ class MultiViewLoss(nn.Module):
         # Distillation loss for aligning branch outputs
         self.kd = DistillationLoss(temperature)
 
-    def classification_loss(self, preds: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def classification_loss(
+        self, preds: torch.Tensor, target: torch.Tensor
+    ) -> torch.Tensor:
         """
         Compute cross-entropy classification loss.
 
@@ -145,7 +151,7 @@ class MultiViewLoss(nn.Module):
                 total_loss += self.kd(branches[i], branches[j])
                 count += 1
 
-        # Avoid division by zero 
+        # Avoid division by zero
         return total_loss / max(count, 1)
 
     def forward(self, outputs: dict, target: torch.Tensor) -> dict:
@@ -178,26 +184,22 @@ class MultiViewLoss(nn.Module):
             outputs["aps"],
             outputs["noise"],
             outputs["glcm"],
-            outputs["dct"]
+            outputs["dct"],
         ]
 
         # Supervised loss for each branch
         branch_loss = self.branch_loss(branch_preds, target)
 
-        # Knowledge distillation between branches 
+        # Knowledge distillation between branches
         kd_loss = self.distillation_loss(branch_preds)
 
         # Weighted combination of all losses
-        total_loss = (
-            fusion_loss +
-            self.alpha * branch_loss +
-            self.beta * kd_loss
-        )
+        total_loss = fusion_loss + self.alpha * branch_loss + self.beta * kd_loss
 
-        # Return structured logging dictionary 
+        # Return structured logging dictionary
         return {
             "total_loss": total_loss,
             "fusion_loss": fusion_loss,
             "branch_loss": branch_loss,
-            "kd_loss": kd_loss
+            "kd_loss": kd_loss,
         }

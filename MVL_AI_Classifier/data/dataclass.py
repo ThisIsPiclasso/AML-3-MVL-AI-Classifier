@@ -4,7 +4,7 @@ import pandas as pd
 from PIL import Image
 import numpy as np
 
-from constants import PATCH_SIZE
+from MVL_AI_Classifier.constants import PATCH_SIZE
 
 
 class DataClass(Dataset):
