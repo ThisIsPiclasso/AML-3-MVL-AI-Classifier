@@ -6,3 +6,4 @@ venv/
 .env
 data/raw
 data/subset
+data/subset.zip
