@@ -28,3 +28,24 @@ DEFAULT_SPARSITY_THRESHOLD = 0.10 #sparsity threshold for dct statistic
 #noise residuals default parameters
 DEFAULT_SIGMA = 1.0 #sigma value for gaussian filter
 DEFAULT_WINDOW_SIZE = 16 
+# Data frame constants
+DEFAULT_AI_PATH = "./data/subset/ai"
+DEFAULT_NATURE_PATH = "./data/subset/nature"
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+NAME_MAP = {
+    "adm": "ADM",
+    "glide": "Glide",
+    "midjourney": "Midjourney",
+    "sdv4": "Stable Diffusion v1.4",
+    "sdv5": "Stable Diffusion v1.5",
+    "vqdm": "VQDM",
+    "wukong": "Wukong",
+}
+
+# Default seed used for reproductibility
+DEFAULT_SEED = 42
+
+# Default training/validation/testing split
+DEFAULT_TRAIN_SPLIT = 0.8
+DEFAULT_VAL_SPLIT = 0.1
+DEFAULT_TEST_SPLIT = 0.1
