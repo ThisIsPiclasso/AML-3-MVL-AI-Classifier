@@ -22,8 +22,8 @@ DEFAULT_N_BINS = 64
 DEFAULT_N_LEVELS = 32
 
 # Data frame constants
-DEFAULT_AI_PATH = "./data/raw/ai"
-DEFAULT_NATURE_PATH = "./data/raw/nature"
+DEFAULT_AI_PATH = "./data/subset/ai"
+DEFAULT_NATURE_PATH = "./data/subset/nature"
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 NAME_MAP = {
     "adm": "ADM",
