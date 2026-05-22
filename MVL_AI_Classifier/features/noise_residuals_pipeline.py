@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 from features.base_processor import BasePreprocessor
-from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE
+from MVL_AI_Classifier.constants import DEFAULT_EPSILON, DEFAULT_SIGMA, DEFAULT_WINDOW_SIZE, PATCH_SIZE, 
 from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
 
 
@@ -25,8 +25,8 @@ class NoiseResidualPreprocessor(BasePreprocessor):
 
     def __init__(
         self,
-        sigma: float = 1.0,
-        window_size: int = 16,
+        sigma: float = DEFAULT_SIGMA #1.0
+        window_size: int = DEFAULT_WINDOW_SIZE #16
         epsilon: float = DEFAULT_EPSILON,
     ):
         """Initialize the noise residual preprocessor.
