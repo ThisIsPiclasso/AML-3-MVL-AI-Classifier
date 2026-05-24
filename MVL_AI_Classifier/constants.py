@@ -48,3 +48,8 @@ PARQUET_FILE = "./data/dataset.parquet"
 BATCH_SIZE = 64
 NUM_WORKERS = 12
 NUM_EPOCHS = 15
+
+# Defaults for Optuna hyperparameter tuning
+N_TRIALS = 20
+MAX_TRAINING_TIME = 3600  # in seconds (1 hour)
+MAX_TUNE_EPOCHS = 5

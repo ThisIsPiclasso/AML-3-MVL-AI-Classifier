@@ -4,7 +4,13 @@ import torch.nn as nn
 
 
 from MVL_AI_Classifier.models.layer_arc import MODEL_DICTIONARY
-from MVL_AI_Classifier.constants import PARQUET_FILE, NUM_WORKERS
+from MVL_AI_Classifier.constants import (
+    MAX_TRAINING_TIME,
+    N_TRIALS,
+    PARQUET_FILE,
+    NUM_WORKERS,
+    MAX_TUNE_EPOCHS,
+)
 
 
 class MultiViewNet(nn.Module):
@@ -97,7 +103,7 @@ class MultiViewNet(nn.Module):
             "embeddings": branch_features,  # For feature analysis/visualization
         }
 
-    def tune(self, n_trials: int = 15, timeout: int = 2700) -> dict:
+    def tune(self, n_trials: int = N_TRIALS, timeout: int = MAX_TRAINING_TIME) -> dict:
         """Runs an automated hyperparameter tuning sweep on this architecture configuration.
 
         Args:
@@ -117,13 +123,28 @@ class MultiViewNet(nn.Module):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Hyperparameter tuning initialized on device: {device}")
 
-        def move_batch_to_device(batch) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-            """Moves all view tensors and labels in a batch to the target device."""
+        def move_batch_to_device(
+            batch: dict,
+        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+            """
+            Moves all view tensors and labels in a batch to the target device.
+            Args:
+                batch (dict): A batch containing 'views' (dict of tensors) and 'label' (tensor).
+            Returns:
+                tuple[dict[str, torch.Tensor], torch.Tensor]: The moved batch tensors and labels.
+            """
             x_dict = {key: tensor.to(device) for key, tensor in batch["views"].items()}
             y = batch["label"].to(device)
             return x_dict, y
 
         def objective(trial: optuna.Trial) -> float:
+            """
+            The objective function for Optuna hyperparameter tuning.
+            It trains the model with the given trial's hyperparameters and returns the validation accuracy.
+            Args:
+                trial (optuna.Trial): The current trial object containing the hyperparameters to evaluate.
+            Returns:
+                float: The validation accuracy achieved with the current trial's hyperparameters."""
             # Dynamically sample values for speeding the process
             lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
             batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
@@ -173,7 +194,7 @@ class MultiViewNet(nn.Module):
             val_accuracy = 0.0
 
             # Pruning-aware training loop
-            max_tune_epochs = 5
+            max_tune_epochs = MAX_TUNE_EPOCHS
 
             # Fixing a type hint issue in calling .set_epoch
             custom_dataset = cast(DataClass, train_loader.dataset)
@@ -201,6 +222,7 @@ class MultiViewNet(nn.Module):
                 correct_fusion = 0
                 total_samples = 0
 
+                # No gradient tracking needed during validation, and it speeds up the process
                 with torch.no_grad():
                     for batch in val_loader:
                         x_dict, y = move_batch_to_device(batch)
@@ -214,6 +236,7 @@ class MultiViewNet(nn.Module):
                         correct_fusion += (predictions == y).sum().item()
                         total_samples += y.size(0)
 
+                # Calculate epoch-level validation metrics
                 val_loss = running_val_loss / total_samples
                 val_accuracy = (correct_fusion / total_samples) * 100
 
