@@ -57,3 +57,8 @@ MAX_TUNE_EPOCHS = 5
 TRAIN_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/train_features.h5"
 VAL_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/val_features.h5"
 TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h5"
+
+# defauls for baseline CNN
+BASELINE_EPOCHS = 10
+BASELINE_BATCH_SIZE = 32
+BASELINE_LR = 1e-3
