@@ -216,6 +216,8 @@ def validate(model, dataloader, loss_function, device):
 
 
 if __name__ == "__main__":
+    # The training is commented out for now.
+    # After we get the best hyperparameters, we will run the main training.
     # main()
 
     tuning_network = MultiViewNet(MODEL_CONFIGURATION)
