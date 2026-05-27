@@ -24,7 +24,7 @@ from ..constants import (
 class DatasetBuilder:
     def __init__(
         self,
-        size: str = SAMPLE_SIZE,
+        size: int = SAMPLE_SIZE,
         ai_path: str = DEFAULT_AI_PATH,
         nature_path: str = DEFAULT_NATURE_PATH,
     ) -> None:
