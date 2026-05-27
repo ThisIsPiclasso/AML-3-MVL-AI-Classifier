@@ -14,7 +14,6 @@ from MVL_AI_Classifier.constants import (
     NUM_EPOCHS,
     VAL_CACHE,
     TRAIN_CACHE,
-    N_TRIALS,
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
@@ -222,6 +221,7 @@ if __name__ == "__main__":
 
     tuning_network = MultiViewNet(MODEL_CONFIGURATION)
 
-    best_hyperparameters = tuning_network.tune(n_trials=N_TRIALS)
+    # Modify parameters of the tuning function in constants.py
+    best_hyperparameters = tuning_network.tune()
 
     print(f"Optimized Parameters: {best_hyperparameters}")
