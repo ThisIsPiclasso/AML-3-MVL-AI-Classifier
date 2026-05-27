@@ -1,14 +1,3 @@
-"""
-Full evaluation pipeline for the Multi-View Learning AI Image Classifier.
-
-Produces:
-    - Per-branch and fusion classification metrics
-    - Confusion matrices
-    - ROC and Precision-Recall curves
-    - Metric visualisations
-    - Comparison against VanillaBaselineCNN
-"""
-
 import os
 import time
 from pathlib import Path
@@ -80,59 +69,6 @@ MODEL_CONFIGURATION = {
 
 BRANCH_NAMES = list(MODEL_CONFIGURATION.keys())
 
-
-# ==============================================================================
-# 1. BASELINE MODEL
-# ==============================================================================
-
-class VanillaBaselineCNN(nn.Module):
-    """Standalone CNN operating on raw pixel patches.
-
-    Serves as the performance floor against which the multi-view
-    framework is evaluated.
-
-    Args:
-        in_channels: Number of input image channels.
-        num_classes: Number of output classes.
-    """
-
-    def __init__(self, in_channels: int = 3, num_classes: int = 2):
-        super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(in_channels, 16, kernel_size=3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((4, 4)),
-        )
-        self.classifier = nn.Sequential(
-            nn.Linear(64 * 4 * 4, 128),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(128, num_classes),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass returning logits.
-
-        Args:
-            x: Input tensor of shape (B, C, H, W).
-
-        Returns:
-            Logits tensor of shape (B, num_classes).
-        """
-        return self.classifier(torch.flatten(self.features(x), 1))
-
-
-# ==============================================================================
-# 2. EVALUATION METRICS
-# ==============================================================================
 
 def compute_metrics(
     labels: np.ndarray,
