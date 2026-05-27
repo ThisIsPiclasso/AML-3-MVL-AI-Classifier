@@ -12,7 +12,9 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     PATCH_SIZE,
     NUM_EPOCHS,
+    VAL_CACHE,
     TRAIN_CACHE,
+    N_TRIALS,
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
@@ -53,43 +55,65 @@ MODEL_CONFIGURATION = {
 }
 
 
+def get_dataloaders(
+    view_configuration: dict, batch_size: int, use_cache: bool = False
+) -> tuple[DataLoader, DataLoader]:
+    """
+    Utility function to get dataloaders for training and validation.
+    Args:
+        view_configuration (dict): The configuration dictionary for the views, used to determine which features to load.
+        batch_size (int): The batch size for the dataloaders.
+        use_cache (bool): Whether to use cached preprocessed features or to preprocess on the fly. Defaults to False.
+    Returns:
+        train_loader (DataLoader): DataLoader for the training set.
+        val_loader (DataLoader): DataLoader for the validation set.
+    """
+    if use_cache:
+        # Cached data Pipeline
+        active_views = list(view_configuration.keys())
+        train_data = CachedDataClass(hdf5_path=TRAIN_CACHE, view_keys=active_views)
+        val_data = CachedDataClass(hdf5_path=VAL_CACHE, view_keys=active_views)
+    else:
+        # Old preprocessing pipeline
+        train_data = DataClass(
+            parquet_file=PARQUET_FILE,
+            view_configuration=view_configuration,
+            split="train",
+        )
+        val_data = DataClass(
+            parquet_file=PARQUET_FILE,
+            view_configuration=view_configuration,
+            split="val",
+        )
+
+    train_loader = DataLoader(
+        train_data,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+    )
+
+    val_loader = DataLoader(
+        val_data, batch_size=batch_size, shuffle=False, num_workers=NUM_WORKERS
+    )
+
+    return train_loader, val_loader
+
+
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
     writer = SummaryWriter(log_dir="runs/multiview_experiment_1")
 
-    # ----------------------------------------Normal preprocessing-----------------------------------------------------
-    # train_data = DataClass(
-    #     parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="train"
-    # )
-    val_data = DataClass(
-        parquet_file=PARQUET_FILE, view_configuration=MODEL_CONFIGURATION, split="val"
-    )
-
-    # -------------------------------------Cached Preprocessing -----------------------------------------------
-    active_views = list(MODEL_CONFIGURATION.keys())
-    train_data = CachedDataClass(hdf5_path=TRAIN_CACHE, view_keys=active_views)
-
-    # val_data = CachedDataClass(
-    #    hdf5_path=VAL_CACHE,
-    #    view_keys=active_views
-    # )
-    # -----------------------------------------------------------------------------------------------------
-    train_loader = DataLoader(
-        train_data,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=NUM_WORKERS,
-        pin_memory=False,
-        persistent_workers=True,
-        prefetch_factor=4,
-    )
-    val_loader = DataLoader(
-        val_data, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS
+    train_loader, val_loader = get_dataloaders(
+        view_configuration=MODEL_CONFIGURATION, batch_size=BATCH_SIZE, use_cache=True
     )
 
     print(
-        f"training on: {len(train_data)} samples, validating on: {len(val_data)} samples"
+        f"training on: {len(train_loader)} samples, validating on: {len(val_loader)} samples"
     )
 
     model = MultiViewNet(MODEL_CONFIGURATION).to(device)
@@ -97,8 +121,6 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-2)
     best_val_loss = float("inf")
     for epoch in range(NUM_EPOCHS):
-        # forwarding the current epoch to the dataset for the random crop
-        train_loader.dataset.set_epoch(epoch)
         train_loss, train_acc = train_epoch(
             model, train_loader, optimizer, loss_function, device
         )
@@ -194,4 +216,10 @@ def validate(model, dataloader, loss_function, device):
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    tuning_network = MultiViewNet(MODEL_CONFIGURATION)
+
+    best_hyperparameters = tuning_network.tune(n_trials=N_TRIALS)
+
+    print(f"Optimized Parameters: {best_hyperparameters}")
