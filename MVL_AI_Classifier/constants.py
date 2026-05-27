@@ -22,8 +22,8 @@ DEFAULT_N_BINS = 64
 DEFAULT_N_LEVELS = 32
 
 # Data frame constants
-DEFAULT_AI_PATH = "./data/raw/ai"
-DEFAULT_NATURE_PATH = "./data/raw/nature"
+DEFAULT_AI_PATH = "./data/subset/ai"
+DEFAULT_NATURE_PATH = "./data/subset/nature"
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 NAME_MAP = {
     "adm": "ADM",
@@ -49,6 +49,11 @@ PARQUET_FILE = "./data/data_parquet/dataset.parquet"
 BATCH_SIZE = 64
 NUM_WORKERS = 4
 NUM_EPOCHS = 15
+
+# Defaults for Optuna hyperparameter tuning
+N_TRIALS = 20
+MAX_TRAINING_TIME = 3600  # in seconds (1 hour)
+MAX_TUNE_EPOCHS = 5
 TRAIN_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/train_features.h5"
 VAL_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/val_features.h5"
 TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h5"

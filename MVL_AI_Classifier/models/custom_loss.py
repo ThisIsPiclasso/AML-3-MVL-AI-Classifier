@@ -1,19 +1,16 @@
 """
-Multi-view loss combining supervised classification on a fusion head and multiple branches, plus cross-branch knowledge distillation.
+Multi-view loss combining supervised classification on a fusion head and multiple branches,
+plus cross-branch knowledge distillation.
 
 It sums:
 1) Fusion cross-entropy loss (main prediction),
-2) Branch cross-entropy losses (auxiliary supervision),
-3) Pairwise KL-based distillation between branches to enforce consistency
-
-# Teacher logits are raw prediction scores from a larger, pre-trained model (the "expert"),
-# while student logits are raw scores from the smaller model being trained to mimic the teacher.
-# Both are unnormalized outputs (before softmax) and are compared during knowledge distillation.
+2) Branch cross-entropy losses averaged (auxiliary supervision),
+3) Pairwise KL-based distillation between branches to enforce consistency (temperature scaled)
 """
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch
 
 
 class DistillationLoss(nn.Module):
@@ -52,14 +49,15 @@ class DistillationLoss(nn.Module):
 
         t = self.temperature
 
-        # Apply temperature (Temperature controls how soft or sharp the model’s predicted probabilities are) scaling:
+        # Apply temperature scaling:
         # Student uses log_softmax
         # Teacher uses softmax to form target probability distribution
         student_log_probs = F.log_softmax(student_logits / t, dim=1)
         teacher_probs = F.softmax(teacher_logits / t, dim=1)
 
         # KL divergence between teacher (target) and student (input)
-        return self.kl(student_log_probs, teacher_probs)
+        # Scaled by t^2 to maintain consistent gradient magnitude across temperatures
+        return self.kl(student_log_probs, teacher_probs) * (t**2)
 
 
 class MultiViewLoss(nn.Module):
@@ -108,52 +106,6 @@ class MultiViewLoss(nn.Module):
         """
         return self.ce(preds, target)
 
-    def branch_loss(self, branches: list, target: torch.Tensor) -> torch.Tensor:
-        """
-        Compute supervised loss across all auxiliary branches.
-
-        Each branch is trained independently against ground truth.
-
-        Args:
-            branches (list[Tensor]): List of branch logits.
-            target (Tensor): Ground-truth labels.
-
-        Returns:
-            Tensor: Summed branch loss.
-        """
-
-        total_loss = 0.0
-
-        for pred in branches:
-            total_loss += self.classification_loss(pred, target)
-
-        return total_loss
-
-    def distillation_loss(self, branches: list) -> torch.Tensor:
-        """
-        Compute pairwise knowledge distillation between all branches.
-
-        Each branch learns from every other branch using KL divergence.
-
-        Args:
-            branches (list[Tensor]): List of branch logits.
-
-        Returns:
-            Tensor: Average pairwise KD loss.
-        """
-
-        total_loss = 0.0
-        count = 0
-
-        # Pairwise KD: (i, j) for all unique combinations
-        for i in range(len(branches)):
-            for j in range(i + 1, len(branches)):
-                total_loss += self.kd(branches[i], branches[j])
-                count += 1
-
-        # Avoid division by zero
-        return total_loss / max(count, 1)
-
     def forward(self, outputs: dict, target: torch.Tensor) -> dict:
         """
         Compute full multi-view loss by safely unpacking nested dictionaries.
@@ -171,19 +123,23 @@ class MultiViewLoss(nn.Module):
 
             # Convert the active logits dictionary values directly into a clean list of tensors
             branch_preds = list(branch_dict.values())
+            num_branches = len(branch_preds)
 
-            if len(branch_preds) > 0:
+            if num_branches > 0:
                 # Calculate supervised cross-entropy for each active branch
                 for pred in branch_preds:
                     total_branch_loss += self.classification_loss(pred, target)
+
+                # Average the auxiliary loss across the number of branches for training stability
+                total_branch_loss = total_branch_loss / num_branches
 
                 # 3. Calculate cross-branch mutual learning knowledge distillation
                 total_kd_loss = 0.0
                 kd_count = 0
 
                 # Pairwise bidirectional loops over the active branch tensors
-                for i in range(len(branch_preds)):
-                    for j in range(len(branch_preds)):
+                for i in range(num_branches):
+                    for j in range(num_branches):
                         if i != j:  # Cross-distill symmetrically: i -> j AND j -> i
                             total_kd_loss += self.kd(branch_preds[i], branch_preds[j])
                             kd_count += 1
@@ -196,7 +152,7 @@ class MultiViewLoss(nn.Module):
             fusion_loss + (self.alpha * total_branch_loss) + (self.beta * kd_loss)
         )
 
-        # Return structured metrics for TensorBoard tracking
+        # Return structured metrics matching your exact dictionary tracking keys
         return {
             "total_loss": total_loss,
             "fusion_loss": fusion_loss,
