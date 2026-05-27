@@ -252,11 +252,14 @@ class MultiViewNet(nn.Module):
                 if trial.should_prune():
                     raise TrialPruned()
 
-            return val_accuracy
+            # Saving the accuracy of the best trial
+            trial.set_user_attr("accuracy", val_accuracy)
+
+            return val_loss
 
         # Initialise Optuna study with automated pruner logic
         study = optuna.create_study(
-            direction="maximize",
+            direction="minimise",
             pruner=optuna.pruners.MedianPruner(
                 n_startup_trials=3, n_warmup_steps=1, interval_steps=1
             ),
