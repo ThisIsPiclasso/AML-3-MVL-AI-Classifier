@@ -17,7 +17,7 @@ from MVL_AI_Classifier.constants import (
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
-from MVL_AI_Classifier.data.cached_dataset import CachedDataClass
+from MVL_AI_Classifier.data.cached_dataclass import CachedDataClass
 from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
 from MVL_AI_Classifier.features.noise_residuals_pipeline import (
     NoiseResidualPreprocessor,
