@@ -1,27 +1,21 @@
 import torch
-from torch.utils.data import DataLoader
 
-from MVL_AI_Classifier.data.dataclass import DataClass
 from MVL_AI_Classifier.models.custom_loss import MultiViewLoss
 from MVL_AI_Classifier.models.multi_view_manager_concat import MultiViewNet
 from MVL_AI_Classifier.constants import (
-    PARQUET_FILE,
     BATCH_SIZE,
-    NUM_WORKERS,
     DEFAULT_N_BINS,
     DEFAULT_N_LEVELS,
     PATCH_SIZE,
     NUM_EPOCHS,
-    VAL_CACHE,
-    TRAIN_CACHE,
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
-from MVL_AI_Classifier.data.cached_dataclass import CachedDataClass
 from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
 from MVL_AI_Classifier.features.noise_residuals_pipeline import (
     NoiseResidualPreprocessor,
 )
+from MVL_AI_Classifier.data.datamanager import DataManager
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -54,78 +48,41 @@ MODEL_CONFIGURATION = {
 }
 
 
-def get_dataloaders(
-    view_configuration: dict, batch_size: int, use_cache: bool = False
-) -> tuple[DataLoader, DataLoader]:
-    """
-    Utility function to get dataloaders for training and validation.
-    Args:
-        view_configuration (dict): The configuration dictionary for the views, used to determine which features to load.
-        batch_size (int): The batch size for the dataloaders.
-        use_cache (bool): Whether to use cached preprocessed features or to preprocess on the fly. Defaults to False.
-    Returns:
-        train_loader (DataLoader): DataLoader for the training set.
-        val_loader (DataLoader): DataLoader for the validation set.
-    """
-    if use_cache:
-        # Cached data Pipeline
-        active_views = list(view_configuration.keys())
-        train_data = CachedDataClass(hdf5_path=TRAIN_CACHE, view_keys=active_views)
-        val_data = CachedDataClass(hdf5_path=VAL_CACHE, view_keys=active_views)
-    else:
-        # Old preprocessing pipeline
-        train_data = DataClass(
-            parquet_file=PARQUET_FILE,
-            view_configuration=view_configuration,
-            split="train",
-        )
-        val_data = DataClass(
-            parquet_file=PARQUET_FILE,
-            view_configuration=view_configuration,
-            split="val",
-        )
-
-    train_loader = DataLoader(
-        train_data,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=4,
-    )
-
-    val_loader = DataLoader(
-        val_data, batch_size=batch_size, shuffle=False, num_workers=NUM_WORKERS
-    )
-
-    return train_loader, val_loader
-
-
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
     writer = SummaryWriter(log_dir="runs/multiview_experiment_1")
 
-    train_loader, val_loader = get_dataloaders(
-        view_configuration=MODEL_CONFIGURATION, batch_size=BATCH_SIZE, use_cache=True
+    data_manager = DataManager(
+        view_configuration=MODEL_CONFIGURATION,
+        batch_size=BATCH_SIZE,
+        use_cache=True,
+        num_sections=3,
     )
-
-    print(
-        f"training on: {len(train_loader)} samples, validating on: {len(val_loader)} samples"
-    )
-
+    val_loader = data_manager.get_val_loader()
     model = MultiViewNet(MODEL_CONFIGURATION).to(device)
     loss_function = MultiViewLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-2)
-    best_val_loss = float("inf")
-    for epoch in range(NUM_EPOCHS):
-        train_loss, train_acc = train_epoch(
-            model, train_loader, optimizer, loss_function, device
-        )
-        train_loss = 0.0
-        val_loss, val_acc = validate(model, val_loader, loss_function, device)
 
+    best_val_loss = float("inf")
+    print("starting training")
+    for epoch in range(NUM_EPOCHS):
+        # init global trackers. this is for this epoch and all sections
+        global_loss = 0.0
+        global_correct = 0
+        global_samples = 0
+        for train_loader in data_manager.get_train_loaders():
+            section_loss, section_correct, section_samples = train_epoch(
+                model, train_loader, optimizer, loss_function, device
+            )
+            global_loss += section_loss
+            global_correct += int(section_correct)
+            global_samples += int(section_samples)
+            del train_loader, section_loss, section_correct, section_samples
+
+        val_loss, val_acc = validate(model, val_loader, loss_function, device)
+        train_loss = global_loss / global_samples
+        train_acc = (global_correct / global_samples) * 100
         print(
             f"Epoch {epoch+1}/{NUM_EPOCHS} - "
             f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} - "
@@ -143,9 +100,9 @@ def main():
 
 
 def train_epoch(model, dataloader, optimizer, loss_function, device):
-    progress = tqdm(dataloader, desc="Training...", leave=True)
+    progress = tqdm(dataloader, desc="Training section...", leave=False)
     model.train()
-    # intitalize trackers for this epoch
+    # intitalize trackers for this epoch abd specific section
     running_loss = 0.0
     correct_fusion = 0
     total_samples = 0
@@ -179,9 +136,8 @@ def train_epoch(model, dataloader, optimizer, loss_function, device):
         progress.set_postfix(
             {"Loss": f"{current_loss:.4f}", "Fusion_Acc": f"{current_acc:.2f}%"}
         )
-    epoch_loss = running_loss / total_samples
-    epoch_acc = (correct_fusion / total_samples) * 100
-    return epoch_loss, epoch_acc
+
+    return running_loss, correct_fusion, total_samples
 
 
 def validate(model, dataloader, loss_function, device):
@@ -217,11 +173,11 @@ def validate(model, dataloader, loss_function, device):
 if __name__ == "__main__":
     # The training is commented out for now.
     # After we get the best hyperparameters, we will run the main training.
-    # main()
+    main()
 
     tuning_network = MultiViewNet(MODEL_CONFIGURATION)
 
     # Modify parameters of the tuning function in constants.py
-    best_hyperparameters = tuning_network.tune()
+    # best_hyperparameters = tuning_network.tune()
 
-    print(f"Optimized Parameters: {best_hyperparameters}")
+    # print(f"Optimized Parameters: {best_hyperparameters}")
