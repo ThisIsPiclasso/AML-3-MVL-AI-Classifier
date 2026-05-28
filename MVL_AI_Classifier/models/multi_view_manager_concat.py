@@ -100,7 +100,9 @@ class MultiViewNet(nn.Module):
             "embeddings": branch_features,  # For feature analysis/visualization
         }
 
-    def tune(self, n_trials: int = N_TRIALS, timeout: int = MAX_TRAINING_TIME) -> dict:
+    def tune(
+        self, data_manager, n_trials: int = N_TRIALS, timeout: int = MAX_TRAINING_TIME
+    ) -> dict:
         """Runs an automated hyperparameter tuning sweep on this architecture configuration.
 
         Args:
@@ -113,11 +115,11 @@ class MultiViewNet(nn.Module):
         # Lazy imports to keep sepparate tuning specific dependecies
         import optuna
         from optuna import TrialPruned
-        from train import train_epoch, validate, get_dataloaders
+        from train import train_epoch, validate
         from MVL_AI_Classifier.models.custom_loss import MultiViewLoss
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Hyperparameter tuning initialized on device: {device}")
+        print(f"tuning  on device: {device}")
 
         def objective(trial: optuna.Trial) -> float:
             """
@@ -137,13 +139,9 @@ class MultiViewNet(nn.Module):
             # Initialize custom multi-view loss module using tuned configurations
             criterion = MultiViewLoss(alpha=alpha, beta=beta, temperature=temperature)
 
-            # Building loaders with the optimized trial batch size
-            train_loader, val_loader = get_dataloaders(
-                view_configuration=self.view_configuration,
-                batch_size=batch_size,
-                use_cache=True,
-            )
-
+            # building val loader and setting batch size
+            data_manager.batch_size = batch_size
+            val_loader = data_manager.get_val_loader()
             # Model setup using the custom architecture
             model = MultiViewNet(
                 view_configuration=self.view_configuration,
@@ -157,7 +155,12 @@ class MultiViewNet(nn.Module):
 
             for epoch in range(MAX_TUNE_EPOCHS):
                 # Training loop
-                _, _ = train_epoch(model, train_loader, optimizer, criterion, device)
+                for train_loader in data_manager.get_train_loaders(
+                    only_first_section=True
+                ):
+                    _, _, _ = train_epoch(
+                        model, train_loader, optimizer, criterion, device
+                    )
 
                 val_loss, val_accuracy = validate(model, val_loader, criterion, device)
 
