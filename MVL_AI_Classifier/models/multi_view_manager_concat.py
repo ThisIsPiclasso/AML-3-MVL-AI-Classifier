@@ -1,4 +1,3 @@
-from typing import cast
 import torch
 import torch.nn as nn
 
@@ -7,8 +6,6 @@ from MVL_AI_Classifier.models.layer_arc import MODEL_DICTIONARY
 from MVL_AI_Classifier.constants import (
     MAX_TRAINING_TIME,
     N_TRIALS,
-    PARQUET_FILE,
-    NUM_WORKERS,
     MAX_TUNE_EPOCHS,
 )
 
@@ -116,26 +113,11 @@ class MultiViewNet(nn.Module):
         # Lazy imports to keep sepparate tuning specific dependecies
         import optuna
         from optuna import TrialPruned
-        from torch.utils.data import DataLoader
-        from MVL_AI_Classifier.data.dataclass import DataClass
+        from train import train_epoch, validate, get_dataloaders
         from MVL_AI_Classifier.models.custom_loss import MultiViewLoss
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Hyperparameter tuning initialized on device: {device}")
-
-        def move_batch_to_device(
-            batch: dict,
-        ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-            """
-            Moves all view tensors and labels in a batch to the target device.
-            Args:
-                batch (dict): A batch containing 'views' (dict of tensors) and 'label' (tensor).
-            Returns:
-                tuple[dict[str, torch.Tensor], torch.Tensor]: The moved batch tensors and labels.
-            """
-            x_dict = {key: tensor.to(device) for key, tensor in batch["views"].items()}
-            y = batch["label"].to(device)
-            return x_dict, y
 
         def objective(trial: optuna.Trial) -> float:
             """
@@ -156,30 +138,10 @@ class MultiViewNet(nn.Module):
             criterion = MultiViewLoss(alpha=alpha, beta=beta, temperature=temperature)
 
             # Building loaders with the optimized trial batch size
-            train_data = DataClass(
-                parquet_file=PARQUET_FILE,
+            train_loader, val_loader = get_dataloaders(
                 view_configuration=self.view_configuration,
-                split="train",
-            )
-
-            val_data = DataClass(
-                parquet_file=PARQUET_FILE,
-                view_configuration=self.view_configuration,
-                split="val",
-            )
-
-            train_loader = DataLoader(
-                train_data,
                 batch_size=batch_size,
-                shuffle=True,
-                num_workers=NUM_WORKERS,
-                pin_memory=True,
-                persistent_workers=True,
-                prefetch_factor=4,
-            )
-
-            val_loader = DataLoader(
-                val_data, batch_size=batch_size, shuffle=False, num_workers=NUM_WORKERS
+                use_cache=True,
             )
 
             # Model setup using the custom architecture
@@ -193,73 +155,26 @@ class MultiViewNet(nn.Module):
             val_loss = 0.0
             val_accuracy = 0.0
 
-            # Pruning-aware training loop
-            max_tune_epochs = MAX_TUNE_EPOCHS
-
-            # Fixing a type hint issue in calling .set_epoch
-            custom_dataset = cast(DataClass, train_loader.dataset)
-
-            for epoch in range(max_tune_epochs):
-                custom_dataset.set_epoch(epoch)
-
+            for epoch in range(MAX_TUNE_EPOCHS):
                 # Training loop
-                model.train()
-                for batch in train_loader:
-                    x_dict, y = move_batch_to_device(batch)
+                _, _ = train_epoch(model, train_loader, optimizer, criterion, device)
 
-                    optimizer.zero_grad()
-                    outputs = model(x_dict)
+                val_loss, val_accuracy = validate(model, val_loader, criterion, device)
 
-                    # FIXED: Changed batch_y to y to match unbundled tuple keys
-                    loss_dict = criterion(outputs, y)
-                    total_loss = loss_dict["total_loss"]
-                    total_loss.backward()
-                    optimizer.step()
-
-                # Validation loop
-                model.eval()
-                running_val_loss = 0.0
-                correct_fusion = 0
-                total_samples = 0
-
-                # No gradient tracking needed during validation, and it speeds up the process
-                with torch.no_grad():
-                    for batch in val_loader:
-                        x_dict, y = move_batch_to_device(batch)
-
-                        outputs = model(x_dict)
-                        # FIXED: Changed from loss_function() to criterion() to align evaluation tracking
-                        losses = criterion(outputs, y)
-                        running_val_loss += losses["total_loss"].item() * y.size(0)
-
-                        predictions = torch.argmax(outputs["fusion"], dim=1)
-                        correct_fusion += (predictions == y).sum().item()
-                        total_samples += y.size(0)
-
-                # Calculate epoch-level validation metrics
-                val_loss = running_val_loss / total_samples
-                val_accuracy = (correct_fusion / total_samples) * 100
-
-                # Print explicit real-world feedback every epoch
                 print(
-                    f"Epoch [{epoch+1}/{max_tune_epochs}] -> Val Loss: {val_loss:.4f} | Val Accuracy: {val_accuracy:.2f}%"
+                    f"Epoch [{epoch+1}/{MAX_TUNE_EPOCHS}] -> Val Loss: {val_loss:.4f} | Val Accuracy: {val_accuracy:.2f}%"
                 )
 
-                # Report performance tracking step to Optuna for pruning
                 trial.report(val_accuracy, epoch)
-
-                # Terminates try early if configuration performs poorly
                 if trial.should_prune():
                     raise TrialPruned()
 
-            # Saving the accuracy of the best trial
             trial.set_user_attr("accuracy", val_accuracy)
-
             return val_loss
 
         # Initialise Optuna study with automated pruner logic
         study = optuna.create_study(
-            direction="minimise",
+            direction="minimize",
             pruner=optuna.pruners.MedianPruner(
                 n_startup_trials=3, n_warmup_steps=1, interval_steps=1
             ),
