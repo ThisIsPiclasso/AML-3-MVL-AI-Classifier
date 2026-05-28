@@ -1,48 +1,56 @@
-import os
-import time
 from pathlib import Path
-
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")  # prevent opening GUI windows for plots
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+from PIL import Image
 from sklearn.metrics import (
     accuracy_score,
-    confusion_matrix,
-    ConfusionMatrixDisplay,
-    f1_score,
     precision_score,
     recall_score,
+    f1_score,
     roc_auc_score,
-    roc_curve,
-    precision_recall_curve,
-    average_precision_score,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    roc_curve
 )
 
-# --- Project imports -----------------------------------------------------------
+# Project imports
+from MVL_AI_Classifier.data.cached_dataset import CachedDataClass
+from MVL_AI_Classifier.data.dataclass import DataClass
 from MVL_AI_Classifier.models.multi_view_manager_concat import MultiViewNet
-from MVL_AI_Classifier.loss import MultiViewLoss
 from MVL_AI_Classifier.constants import (
     PARQUET_FILE,
+    BATCH_SIZE,
+    NUM_WORKERS,
     DEFAULT_N_BINS,
     DEFAULT_N_LEVELS,
     PATCH_SIZE,
+    TRAIN_CACHE, 
+    VAL_CACHE, 
+    TEST_CACHE,
+    BASELINE_EPOCHS,
+    BASELINE_BATCH_SIZE,
+    BASELINE_LR
 )
+
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
 from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
 from MVL_AI_Classifier.features.noise_residuals_pipeline import NoiseResidualPreprocessor
 
-# ------------------------------------------------------------------------------
-# Constants
-# ------------------------------------------------------------------------------
 
 RESULTS_DIR = Path("evaluation_results")
 CLASS_NAMES = ["Real", "AI-Generated"]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BRANCH_NAMES = ["aps", "dct", "glcm", "noise"]
+
 
 MODEL_CONFIGURATION = {
     "aps": {
@@ -67,757 +75,426 @@ MODEL_CONFIGURATION = {
     },
 }
 
-BRANCH_NAMES = list(MODEL_CONFIGURATION.keys())
+# Path to the saved model weights.
+BEST_MODEL_PATH = Path("best_multiview_model.pt")
+CACHE_DIR = Path("/workspace/AML-3-MVL-AI-Classifier/data/data_cache")
+TEST_CACHE_PATH = CACHE_DIR / "test_features.h5"
 
+class RawPixelDataset(DataClass):
+    """DataClass subclass that returns raw pixel patches instead of preprocessed views.
 
-def compute_metrics(
-    labels: np.ndarray,
-    predictions: np.ndarray,
-    probabilities: np.ndarray,
-    model_name: str = "Model",
+    Reuses DataClass's parquet loading, split filtering, and center-crop
+    patch extraction. It returns the raw (3, PATCH_SIZE, PATCH_SIZE) pixel tensor
+    normalised to [0, 1] without the view preprocessing. Used by the baseline CNN
+    """
+
+    def __init__(self, parquet_file: str, split: str = "test"):
+        super().__init__(
+            parquet_file=parquet_file,
+            view_configuration={}, # no view preprocessors needed for raw pixels
+            split=split,
+        )
+
+    def __getitem__(self, index) -> dict:
+        # Load image and extract patch
+        item = self.df.iloc[index]  # get row from filtered dataframe
+        image = Image.open(item["path"]) # get image 
+        patch = self._get_patch(image, index) # get patch
+
+        # Convert PIL patch to float32 tensor in [0, 1], shape (3, H, W).
+        pixel_array = np.array(patch, dtype=np.float32) / 255.0
+        pixel_tensor = torch.from_numpy(pixel_array.transpose(2, 0, 1)) # (H, W, C) -> (3, H, W)
+
+        label = torch.tensor(int(item["label"]), dtype=torch.long) # convert label to tensor
+        return {"image": pixel_tensor, "label": label}
+
+# Baseline CNN definition and training function 
+
+class BaselineCNN(nn.Module):
+    """Simple CNN operating on raw (3, 256, 256) pixel patches."""
+
+    def __init__(self):
+        super().__init__()
+        # Simple 3-layer CNN 
+        self.features = nn.Sequential( 
+            nn.Conv2d(3, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), 
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(64 * 4 * 4, 128), nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(128, 2),
+        )
+
+    def forward(self, x):
+        return self.classifier(torch.flatten(self.features(x), 1))
+
+def train_and_predict_baseline(
+    train_loader: DataLoader,
+    eval_loader: DataLoader,
 ) -> dict:
-    """Compute a complete set of classification metrics.
+    """Train baseline CNN and collect predictions.
 
     Args:
-        labels: Ground-truth integer labels, shape (N,).
-        predictions: Predicted integer labels, shape (N,).
-        probabilities: Predicted probabilities for the positive class,
-            shape (N,). Used for AUC and PR calculations.
-        model_name: Display name for logging.
+        train_loader: DataLoader yielding {"image": tensor, "label": tensor}.
+            Shuffled for training.
+        eval_loader: Same dataset but not shuffled, for collecting predictions.
 
     Returns:
-        Dictionary containing all computed metric values.
+        Dict with "probabilities" and "predictions" numpy arrays.
     """
-    metrics = {
-        "model": model_name,
-        "accuracy": accuracy_score(labels, predictions),
-        "precision": precision_score(
-            labels, predictions, zero_division=0
-        ),
-        "recall": recall_score(labels, predictions, zero_division=0),
-        "f1": f1_score(labels, predictions, zero_division=0),
-        "roc_auc": roc_auc_score(labels, probabilities),
-        "avg_precision": average_precision_score(labels, probabilities),
-        # False positive rate at threshold optimised for F1.
-        "fpr": 1.0 - precision_score(
-            labels, predictions, pos_label=0, zero_division=0
-        ),
-    }
-
-    print(f"\n{'─' * 55}")
-    print(f"  {model_name}")
-    print(f"{'─' * 55}")
-    for key, value in metrics.items():
-        if key != "model":
-            print(f"  {key:<20} {value:.4f}")
-
-    return metrics
-
-
-# ==============================================================================
-# 3. INFERENCE HELPERS
-# ==============================================================================
-
-def run_inference(
-    model: nn.Module,
-    loader: DataLoader,
-    device: torch.device,
-    is_multiview: bool = False,
-) -> tuple[np.ndarray, np.ndarray, dict]:
-    """Run inference on a DataLoader and collect predictions.
-
-    Args:
-        model: Trained PyTorch model.
-        loader: DataLoader yielding (inputs, labels) batches.
-        device: Torch device to run on.
-        is_multiview: If True, expects the model to return the
-            ``outputs`` dictionary used by ``MultiViewLoss``, including
-            ``"fusion"`` and ``"branches"`` keys.
-
-    Returns:
-        Tuple of:
-            - ``labels``: Ground-truth numpy array, shape (N,).
-            - ``fusion_probs``: Fusion-head positive-class probabilities,
-              shape (N,).
-            - ``branch_probs``: Dictionary mapping branch name to
-              positive-class probability array, shape (N,).
-              Empty dict when ``is_multiview=False``.
-    """
-    model.eval()
-    all_labels = []
-    all_fusion_probs = []
-    all_branch_probs = {name: [] for name in BRANCH_NAMES}
-
-    with torch.no_grad():
-        for batch in loader:
-            inputs, batch_labels = batch
-            if isinstance(inputs, (list, tuple)):
-                inputs = [x.to(device) for x in inputs]
-            else:
-                inputs = inputs.to(device)
-
-            batch_labels = batch_labels.to(device)
-
-            if is_multiview:
-                outputs = model(inputs)
-                fusion_logits = outputs["fusion"]
-                fusion_prob = torch.softmax(fusion_logits, dim=1)[:, 1]
-                all_fusion_probs.append(fusion_prob.cpu().numpy())
-
-                if "branches" in outputs:
-                    for name in BRANCH_NAMES:
-                        if name in outputs["branches"]:
-                            branch_logits = outputs["branches"][name]
-                            branch_prob = torch.softmax(
-                                branch_logits, dim=1
-                            )[:, 1]
-                            all_branch_probs[name].append(
-                                branch_prob.cpu().numpy()
-                            )
-            else:
-                logits = model(inputs)
-                prob = torch.softmax(logits, dim=1)[:, 1]
-                all_fusion_probs.append(prob.cpu().numpy())
-
-            all_labels.append(batch_labels.cpu().numpy())
-
-    labels = np.concatenate(all_labels)
-    fusion_probs = np.concatenate(all_fusion_probs)
-    branch_probs = {
-        name: np.concatenate(probs)
-        for name, probs in all_branch_probs.items()
-        if len(probs) > 0
-    }
-
-    return labels, fusion_probs, branch_probs
-
-
-# ==============================================================================
-# 4. VISUALISATION FUNCTIONS
-# ==============================================================================
-
-def plot_confusion_matrix(
-    labels: np.ndarray,
-    predictions: np.ndarray,
-    model_name: str,
-    save_dir: Path,
-) -> None:
-    """Plot and save a normalised confusion matrix.
-
-    Args:
-        labels: Ground-truth integer labels.
-        predictions: Predicted integer labels.
-        model_name: Used as the figure title and filename.
-        save_dir: Directory to save the PNG file.
-    """
-    cm = confusion_matrix(labels, predictions, normalize="true")
-    fig, ax = plt.subplots(figsize=(6, 5))
-    disp = ConfusionMatrixDisplay(
-        confusion_matrix=cm,
-        display_labels=CLASS_NAMES,
-    )
-    disp.plot(
-        ax=ax,
-        cmap="Blues",
-        colorbar=True,
-        values_format=".2f",
-    )
-    ax.set_title(f"Confusion Matrix — {model_name}", fontsize=13, pad=12)
-    plt.tight_layout()
-    filename = save_dir / f"confusion_matrix_{model_name.replace(' ', '_')}.png"
-    plt.savefig(filename, dpi=150)
-    plt.close()
-    print(f"  Saved: {filename}")
-
-
-def plot_roc_curves(
-    results: dict,
-    save_dir: Path,
-) -> None:
-    """Plot ROC curves for all models on one figure.
-
-    Args:
-        results: Dictionary mapping model name to dict with keys
-            ``"labels"``, ``"probs"`` (positive-class probabilities),
-            and ``"auc"``.
-        save_dir: Directory to save the figure.
-    """
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    for model_name, data in results.items():
-        fpr, tpr, _ = roc_curve(data["labels"], data["probs"])
-        auc = data["auc"]
-        ax.plot(fpr, tpr, lw=2, label=f"{model_name}  (AUC = {auc:.3f})")
-
-    ax.plot([0, 1], [0, 1], "k--", lw=1, label="Random")
-    ax.set_xlabel("False Positive Rate", fontsize=12)
-    ax.set_ylabel("True Positive Rate", fontsize=12)
-    ax.set_title("ROC Curves — All Models", fontsize=13)
-    ax.legend(loc="lower right", fontsize=9)
-    ax.grid(alpha=0.3)
-    plt.tight_layout()
-
-    path = save_dir / "roc_curves_all_models.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f"  Saved: {path}")
-
-
-def plot_precision_recall_curves(
-    results: dict,
-    save_dir: Path,
-) -> None:
-    """Plot Precision-Recall curves for all models on one figure.
-
-    Args:
-        results: Dictionary mapping model name to dict with keys
-            ``"labels"``, ``"probs"``, and ``"ap"`` (average precision).
-        save_dir: Directory to save the figure.
-    """
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    for model_name, data in results.items():
-        precision, recall, _ = precision_recall_curve(
-            data["labels"], data["probs"]
-        )
-        ap = data["ap"]
-        ax.plot(
-            recall, precision, lw=2,
-            label=f"{model_name}  (AP = {ap:.3f})"
-        )
-
-    ax.set_xlabel("Recall", fontsize=12)
-    ax.set_ylabel("Precision", fontsize=12)
-    ax.set_title("Precision-Recall Curves — All Models", fontsize=13)
-    ax.legend(loc="upper right", fontsize=9)
-    ax.grid(alpha=0.3)
-    plt.tight_layout()
-
-    path = save_dir / "pr_curves_all_models.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f"  Saved: {path}")
-
-
-def plot_metrics_bar(
-    all_metrics: list[dict],
-    save_dir: Path,
-) -> None:
-    """Plot grouped bar chart comparing all models across metrics.
-
-    Args:
-        all_metrics: List of metric dictionaries, one per model.
-            Each dict must contain ``"model"`` plus numeric metric keys.
-        save_dir: Directory to save the figure.
-    """
-    metric_keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
-    model_names = [m["model"] for m in all_metrics]
-    num_models = len(model_names)
-    num_metrics = len(metric_keys)
-
-    bar_width = 0.7 / num_models
-    x = np.arange(num_metrics)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-
-    for idx, metrics in enumerate(all_metrics):
-        values = [metrics[k] for k in metric_keys]
-        offsets = x + (idx - num_models / 2 + 0.5) * bar_width
-        bars = ax.bar(offsets, values, bar_width, label=metrics["model"])
-        for bar, val in zip(bars, values):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.005,
-                f"{val:.3f}",
-                ha="center",
-                va="bottom",
-                fontsize=7,
-                rotation=45,
-            )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(
-        [k.replace("_", " ").title() for k in metric_keys], fontsize=11
-    )
-    ax.set_ylim(0.0, 1.15)
-    ax.set_ylabel("Score", fontsize=12)
-    ax.set_title("Model Comparison — Classification Metrics", fontsize=13)
-    ax.legend(loc="upper right", fontsize=9)
-    ax.grid(axis="y", alpha=0.3)
-    plt.tight_layout()
-
-    path = save_dir / "metrics_bar_comparison.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f"  Saved: {path}")
-
-
-def plot_branch_heatmap(
-    branch_metrics: dict,
-    save_dir: Path,
-) -> None:
-    """Plot heatmap of metric values across individual branches.
-
-    Args:
-        branch_metrics: Dictionary mapping branch name to its
-            metric dictionary.
-        save_dir: Directory to save the figure.
-    """
-    metric_keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
-    branch_names = list(branch_metrics.keys())
-
-    data = np.array(
-        [
-            [branch_metrics[b][k] for k in metric_keys]
-            for b in branch_names
-        ]
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(len(metric_keys) * 1.4, len(branch_names) * 1.0 + 1.5)
-    )
-    im = ax.imshow(data, vmin=0.0, vmax=1.0, cmap="YlOrRd", aspect="auto")
-
-    ax.set_xticks(range(len(metric_keys)))
-    ax.set_xticklabels(
-        [k.replace("_", " ").title() for k in metric_keys], fontsize=11
-    )
-    ax.set_yticks(range(len(branch_names)))
-    ax.set_yticklabels(
-        [b.upper() for b in branch_names], fontsize=11
-    )
-    ax.set_title("Branch Performance Heatmap", fontsize=13, pad=12)
-
-    plt.colorbar(im, ax=ax, fraction=0.03, pad=0.04)
-
-    for row in range(len(branch_names)):
-        for col in range(len(metric_keys)):
-            ax.text(
-                col, row,
-                f"{data[row, col]:.3f}",
-                ha="center", va="center",
-                fontsize=9,
-                color="black" if data[row, col] < 0.7 else "white",
-            )
-
-    plt.tight_layout()
-    path = save_dir / "branch_heatmap.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f"  Saved: {path}")
-
-
-def plot_performance_overview(
-    all_metrics: list[dict],
-    save_dir: Path,
-) -> None:
-    """Plot radar (spider) chart comparing models across key metrics.
-
-    Args:
-        all_metrics: List of metric dicts. Each must contain
-            ``"model"`` and numeric metric values.
-        save_dir: Directory to save the figure.
-    """
-    metric_keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
-    num_metrics = len(metric_keys)
-    angles = np.linspace(0, 2 * np.pi, num_metrics, endpoint=False).tolist()
-    angles += angles[:1]  # close the polygon
-
-    fig, ax = plt.subplots(
-        figsize=(7, 7), subplot_kw=dict(polar=True)
-    )
-
-    for metrics in all_metrics:
-        values = [metrics[k] for k in metric_keys]
-        values += values[:1]  # close the polygon
-        ax.plot(angles, values, lw=2, label=metrics["model"])
-        ax.fill(angles, values, alpha=0.07)
-
-    ax.set_thetagrids(
-        np.degrees(angles[:-1]),
-        [k.replace("_", " ").title() for k in metric_keys],
-        fontsize=10,
-    )
-    ax.set_ylim(0.0, 1.0)
-    ax.set_title("Radar — Model Overview", fontsize=13, y=1.08)
-    ax.legend(
-        loc="upper right",
-        bbox_to_anchor=(1.35, 1.1),
-        fontsize=9,
-    )
-    plt.tight_layout()
-
-    path = save_dir / "radar_overview.png"
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f"  Saved: {path}")
-
-
-# ==============================================================================
-# 5. BASELINE TRAINING HELPER
-# ==============================================================================
-
-def train_baseline(
-    raw_images: np.ndarray,
-    labels: np.ndarray,
-    num_classes: int = 2,
-    epochs: int = 10,
-    batch_size: int = 32,
-    lr: float = 1e-3,
-) -> tuple[VanillaBaselineCNN, np.ndarray, np.ndarray]:
-    """Train VanillaBaselineCNN and return model and predictions.
-
-    Args:
-        raw_images: Float32 array of shape (N, C, H, W).
-        labels: Integer label array of shape (N,).
-        num_classes: Number of output classes.
-        epochs: Training epochs.
-        batch_size: Mini-batch size.
-        lr: Learning rate.
-
-    Returns:
-        Tuple of:
-            - Trained ``VanillaBaselineCNN``.
-            - Predicted integer labels on the full dataset.
-            - Predicted positive-class probabilities on the full dataset.
-    """
-    X_tensor = torch.tensor(raw_images, dtype=torch.float32)
-    y_tensor = torch.tensor(labels, dtype=torch.long)
-    dataset = TensorDataset(X_tensor, y_tensor)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-    model = VanillaBaselineCNN(
-        in_channels=X_tensor.shape[1], num_classes=num_classes
-    ).to(DEVICE)
+    model = BaselineCNN().to(DEVICE)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
 
     model.train()
-    for epoch in range(epochs):
+    for epoch in range(BASELINE_EPOCHS):
         epoch_loss = 0.0
-        for batch_x, batch_y in loader:
-            batch_x, batch_y = batch_x.to(DEVICE), batch_y.to(DEVICE)
+        for batch in train_loader:
+            images = batch["image"].to(DEVICE)
+            labels = batch["label"].to(DEVICE)
             optimizer.zero_grad()
-            loss = criterion(model(batch_x), batch_y)
+            loss = criterion(model(images), labels)
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
-        print(
-            f"  Baseline epoch {epoch + 1}/{epochs}  "
-            f"loss={epoch_loss / len(loader):.4f}"
-        )
+        print(f"    Epoch {epoch+1}/{BASELINE_EPOCHS}  "
+              f"loss={epoch_loss / len(train_loader):.4f}")
 
-    # Collect predictions.
     model.eval()
-    all_preds, all_probs = [], []
-    eval_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    all_probs = []
+    all_labels = []
     with torch.no_grad():
-        for batch_x, _ in eval_loader:
-            logits = model(batch_x.to(DEVICE))
-            probs = torch.softmax(logits, dim=1)[:, 1]
-            preds = torch.argmax(logits, dim=1)
-            all_preds.append(preds.cpu().numpy())
+        for batch in eval_loader:
+            images = batch["image"].to(DEVICE)
+            probs = torch.softmax(model(images), dim=1)[:, 1]
             all_probs.append(probs.cpu().numpy())
+            all_labels.append(batch["label"].numpy())
 
-    return (
-        model,
-        np.concatenate(all_preds),
-        np.concatenate(all_probs),
-    )
-
-
-# ==============================================================================
-# 6. PLACEHOLDER: MULTI-VIEW DATA LOADER
-# ==============================================================================
-
-def load_evaluation_data(
-    model: "MultiViewNet",          # type: ignore[name-defined]
-) -> tuple[DataLoader, np.ndarray]:
-    """Load the test split from the trained MultiViewNet.
-
-    This function is a PLACEHOLDER. Replace the body with your actual
-    data loading logic once the MultiViewNet data-access API is stable.
-
-    Expected contract:
-        - Returns a DataLoader that yields ``(views, labels)`` batches
-          where ``views`` is whatever format ``MultiViewNet.forward``
-          expects.
-        - Also returns the corresponding raw images as a numpy array
-          of shape ``(N, 3, H, W)`` for the baseline CNN.
+    probabilities = np.concatenate(all_probs)
+    labels = np.concatenate(all_labels)
+    return {
+        "probabilities": probabilities,
+        "predictions": (probabilities >= 0.5).astype(np.int64),
+        "labels": labels,
+    }
+    
+    
+def collect_multiview_predictions(
+    model: MultiViewNet, 
+    test_loader: DataLoader,
+) -> dict:
+    """Run multi-view model on the test set and collect all predictions.
 
     Args:
-        model: Trained MultiViewNet instance.
+        model: Trained MultiViewNet on DEVICE.
+        test_loader: DataLoader from CachedDataClass.
 
     Returns:
-        Tuple of:
-            - ``DataLoader`` for the test split.
-            - Raw image numpy array of shape ``(N, 3, H, W)``,
-              float32, pixel values in [0, 1].
+        Dict with true_labels, fusion preds, and per-branch preds.
     """
-    # ------------------------------------------------------------------ #
-    # PLACEHOLDER — replace with real test-split loading.                 #
-    # ------------------------------------------------------------------ #
-    print("  ⚠️  load_evaluation_data: using synthetic placeholder data.")
+    model.eval() # evaluation mode 
+    all_labels = [] # true labels for all samples
+    all_fusion_probs = [] # fusion head probabilities for all samples
+    all_branch_probs = {name: [] for name in BRANCH_NAMES} # dict of branch probabilities
 
-    num_samples = 200
-    rng = np.random.default_rng(0)
+    with torch.no_grad(): # no gradients needed for evaluation
+        for batch in test_loader: # iterate over test batches
+            # Same batch format as training.
+            views = {
+                name: tensor.to(DEVICE)
+                for name, tensor in batch["views"].items() # batch["views"] is a dict of view_name: tensor
+            }
+            labels = batch["label"].to(DEVICE)
 
-    # Synthetic raw images for the baseline CNN.
-    raw_images = rng.random((num_samples, 3, PATCH_SIZE, PATCH_SIZE)).astype(
-        np.float32
-    )
-    labels = rng.integers(0, 2, size=(num_samples,)).astype(np.int64)
+            outputs = model(views) 
+            # outputs["fusion"]: (B, 2) logits from the fusion head. B is batch size, 2 is number of classes.
+            # outputs["branches"]: dict of {view_name: (B, 2) logits} from each branch's individual classifier 
 
-    # Synthetic view tensors matching MODEL_CONFIGURATION input shapes.
-    view_tensors = {
-        name: torch.tensor(
-            rng.random((num_samples, *cfg["input_shape"])).astype(np.float32)
-        )
-        for name, cfg in MODEL_CONFIGURATION.items()
+            # Fusion probabilities.
+            fusion_p = torch.softmax(outputs["fusion"], dim=1)[:, 1] # (B, 2) -> (B,) probabilities for class 1 (AI-generated)
+            all_fusion_probs.append(fusion_p.cpu().numpy()) # move to CPU and convert to numpy for later concatenation
+
+            # Branch probabilities.
+            if "branches" in outputs:
+                for name in BRANCH_NAMES:
+                    if name in outputs["branches"]:
+                        branch_prob = torch.softmax(outputs["branches"][name], dim=1)[:, 1] # (B, 2) -> (B,) probabilities for class 1 from this branch
+                        all_branch_probs[name].append(branch_prob.cpu().numpy()) # move to CPU and store in dict
+
+            all_labels.append(labels.cpu().numpy()) # store true labels for this batch
+
+    true_labels = np.concatenate(all_labels) # concatenate all batches of true labels into one array
+    fusion_probs = np.concatenate(all_fusion_probs) # concatenate all batches of fusion probabilities into one array
+
+    result = {
+        "true_labels": true_labels,
+        "fusion": {
+            "probabilities": fusion_probs,
+            "predictions": (fusion_probs >= 0.5).astype(np.int64), #0.5 threshold for binary classification
+        },
+        "branches": {},
     }
-    label_tensor = torch.tensor(labels)
-
-    # Build a DataLoader that yields (view_dict, label) batches.
-    # NOTE: TensorDataset does not support dict inputs natively;
-    # use a list of tensors and reconstruct the dict in a wrapper.
-    view_list = [view_tensors[n] for n in BRANCH_NAMES]
-    tensor_dataset = TensorDataset(*view_list, label_tensor)
-
-    def collate_views(batch):
-        """Reconstruct the view dict from a flat TensorDataset batch."""
-        stacked = [torch.stack([b[i] for b in batch]) for i in range(len(batch[0]))]
-        views = {name: stacked[idx] for idx, name in enumerate(BRANCH_NAMES)}
-        labels_batch = stacked[-1]
-        return views, labels_batch
-
-    loader = DataLoader(
-        tensor_dataset,
-        batch_size=32,
-        shuffle=False,
-        collate_fn=collate_views,
-    )
-
-    return loader, raw_images, labels
+    for name in BRANCH_NAMES:
+        if all_branch_probs[name]:
+            probs = np.concatenate(all_branch_probs[name])
+            result["branches"][name] = {
+                "probabilities": probs,
+                "predictions": (probs >= 0.5).astype(np.int64),
+            }
+    return result
 
 
-# ==============================================================================
-# 7. MAIN EVALUATION PIPELINE
-# ==============================================================================
 
-def evaluate() -> None:
-    """Run the full evaluation pipeline.
+# Metrics and plotting functions 
 
-    Steps:
-        1. Load the trained MultiViewNet (or initialise a fresh one as
-           placeholder).
-        2. Run inference and collect per-branch and fusion predictions.
-        3. Train and evaluate the VanillaBaselineCNN on the same data.
-        4. Compute all metrics.
-        5. Generate and save all visualisations.
-        6. Print a final comparison table.
-    """
+def compute_all_metrics(true_labels, predicted_labels, probabilities, model_name):
+    """Compute accuracy, precision, recall, F1, ROC-AUC"""
+    metrics = {
+        "name": model_name,
+        "accuracy": accuracy_score(true_labels, predicted_labels),
+        "precision": precision_score(true_labels, predicted_labels, zero_division=0),
+        "recall": recall_score(true_labels, predicted_labels, zero_division=0),
+        "f1": f1_score(true_labels, predicted_labels, zero_division=0),
+        "roc_auc": roc_auc_score(true_labels, probabilities)
+    }
+    print(f"  {model_name}")
+    for k, v in metrics.items(): # k = metric name, v = metric value
+        if k != "name": # skip printing the name key
+            print(f"    {k:<18s} {v:.4f}") # 18 spaces for metric name, 4 decimal places for value
+    return metrics
+
+
+def plot_confusion_matrix(true_labels, preds, name, save_dir):
+    """Plot a normalised confusion matrix."""
+    confusion_m = confusion_matrix(true_labels, preds, normalize="true")
+    _, axis = plt.subplots(figsize=(6, 5))
+    ConfusionMatrixDisplay(confusion_matrix=confusion_m, display_labels=CLASS_NAMES).plot(
+        ax=axis, cmap="Blues", values_format=".2f")
+    axis.set_title(f"Confusion Matrix — {name}")
+    plt.tight_layout()
+    path = save_dir / f"cm_{name.replace(' ', '_').lower()}.png"
+    plt.savefig(path, dpi=150); plt.close()
+    print(f"    Saved: {path}")
+
+
+def plot_roc_curves(curve_data, save_dir):
+    """Plot ROC curves for all models."""
+    _, axis = plt.subplots(figsize=(8, 6))
+    for name, dictionary in curve_data.items(): # d is the dict containing true_labels, probabilities and roc_auc for this model
+        false_positive_rate, true_positive_rate, _ = roc_curve(dictionary["true_labels"], dictionary["probabilities"]) #
+        axis.plot(false_positive_rate, true_positive_rate, lw=2, label=f"{name} (AUC={dictionary['roc_auc']:.3f})")
+    axis.plot([0, 1], [0, 1], "k--", lw=1, label="Random") # random classifier line
+    axis.set_xlabel("False Positive Rate"); axis.set_ylabel("True Positive Rate")
+    axis.set_title("ROC Curves"); axis.legend(fontsize=8); axis.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_dir / "roc_curves.png", dpi=150); plt.close()
+    print(f"    Saved: {save_dir / 'roc_curves.png'}")
+
+
+def plot_metrics_bar(all_metrics, save_dir):
+    """Save grouped bar chart comparing all models."""
+    keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
+    labels = ["Accuracy", "Precision", "Recall", "F1", "ROC AUC"]
+    length = len(all_metrics)
+    width = 0.7 / length
+    x_axis = np.arange(len(keys)) #x = 
+
+    _, ax = plt.subplots(figsize=(12, 6))
+    for index, metrics_dict in enumerate(all_metrics):
+        vals = [metrics_dict[k] for k in keys]
+        bars = ax.bar(x_axis + (index - length/2 + 0.5) * width, vals, width, label=metrics_dict["name"])
+        for bar, value in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
+                    f"{value:.3f}", ha="center", fontsize=7, rotation=45)
+    ax.set_xticks(x_axis); ax.set_xticklabels(labels)
+    ax.set_ylim(0, 1.15); ax.set_ylabel("Score")
+    ax.set_title("Metric Comparison"); ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_dir / "metrics_bar.png", dpi=150); plt.close()
+    print(f"    Saved: {save_dir / 'metrics_bar.png'}")
+
+
+def plot_branch_heatmap(branch_metrics, save_dir):
+    """Save heatmap of branch performance."""
+    keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
+    branches = list(branch_metrics.keys())
+    data = np.array([[branch_metrics[b][k] for k in keys] for b in branches])
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    im = ax.imshow(data, vmin=0, vmax=1, cmap="YlOrRd", aspect="auto")
+    ax.set_xticks(range(len(keys)))
+    ax.set_xticklabels(["Acc", "Prec", "Rec", "F1", "AUC"])
+    ax.set_yticks(range(len(branches)))
+    ax.set_yticklabels([b.upper() for b in branches])
+    ax.set_title("Branch Heatmap")
+    plt.colorbar(im, ax=ax, fraction=0.03)
+    for r in range(len(branches)):
+        for c in range(len(keys)):
+            color = "white" if data[r, c] > 0.7 else "black"
+            ax.text(c, r, f"{data[r,c]:.3f}", ha="center", va="center",
+                    fontsize=10, color=color)
+    plt.tight_layout()
+    plt.savefig(save_dir / "branch_heatmap.png", dpi=150); plt.close()
+    print(f"    Saved: {save_dir / 'branch_heatmap.png'}")
+
+
+def plot_branch_vs_fusion(fusion_m, branch_m, save_dir):
+    """Save bar chart comparing branches to fusion."""
+    names, accs, f1s = [], [], []
+    for bname, bm in branch_m.items():
+        names.append(bname.upper())
+        accs.append(bm["accuracy"])
+        f1s.append(bm["f1"])
+    names.append("FUSION"); accs.append(fusion_m["accuracy"]); f1s.append(fusion_m["f1"])
+
+    x = np.arange(len(names)); w = 0.35
+    _, ax = plt.subplots(figsize=(10, 5))
+    b1 = ax.bar(x - w/2, accs, w, label="Accuracy", color="#4C72B0")
+    b2 = ax.bar(x + w/2, f1s, w, label="F1 Score", color="#DD8452")
+    for bar in [b1[-1], b2[-1]]:
+        bar.set_edgecolor("red"); bar.set_linewidth(2)
+    for bar in list(b1) + list(b2):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.005,
+                f"{bar.get_height():.3f}", ha="center", fontsize=8)
+    ax.set_xticks(x); ax.set_xticklabels(names)
+    ax.set_ylim(0, 1.15); ax.set_ylabel("Score")
+    ax.set_title("Branch vs Fusion"); ax.legend(); ax.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(save_dir / "branch_vs_fusion.png", dpi=150); plt.close()
+    print(f"    Saved: {save_dir / 'branch_vs_fusion.png'}")
+
+
+
+def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"\n{'=' * 60}")
-    print("  Multi-View Classifier — Full Evaluation Pipeline")
-    print(f"{'=' * 60}")
-    print(f"  Device : {DEVICE}")
-    print(f"  Output : {RESULTS_DIR.resolve()}")
-    print(f"{'=' * 60}\n")
 
-    # ------------------------------------------------------------------
-    # Step 1: Initialise / load MultiViewNet
-    # ------------------------------------------------------------------
-    print("► Loading MultiViewNet...")
-
-    model = MultiViewNet(view_configuration=MODEL_CONFIGURATION).to(DEVICE)
-
-    # PLACEHOLDER: replace with your checkpoint loading logic.
-    # Example:
-    #   checkpoint = torch.load("checkpoints/best_model.pt", map_location=DEVICE)
-    #   model.load_state_dict(checkpoint["model_state_dict"])
-    print("  ⚠️  No checkpoint loaded — using randomly initialised weights.")
-
-    # ------------------------------------------------------------------
-    # Step 2: Load data
-    # ------------------------------------------------------------------
-    print("\n► Loading evaluation data...")
-    test_loader, raw_images, true_labels = load_evaluation_data(model)
-
-    # ------------------------------------------------------------------
-    # Step 3: MultiViewNet inference
-    # ------------------------------------------------------------------
-    print("\n► Running MultiViewNet inference...")
-    t0 = time.time()
-    labels, fusion_probs, branch_probs = run_inference(
-        model, test_loader, DEVICE, is_multiview=True
+    active_views = list(MODEL_CONFIGURATION.keys()) # get the list of view names from the model configuration
+    #   batch["views"] = {"aps": tensor, "dct": tensor, ...}, returned by CachedDataClass, already on CPU
+    #   batch["label"] = tensor
+    test_data = CachedDataClass(
+        hdf5_path=str(TEST_CACHE_PATH),
+        view_keys=active_views,
     )
-    mvl_inference_time = time.time() - t0
-    print(f"  Inference time: {mvl_inference_time:.2f}s")
-
-    fusion_preds = (fusion_probs >= 0.5).astype(int)
-
-    # Per-branch predictions.
-    branch_preds = {
-        name: (probs >= 0.5).astype(int)
-        for name, probs in branch_probs.items()
-    }
-
-    # ------------------------------------------------------------------
-    # Step 4: Baseline training and inference
-    # ------------------------------------------------------------------
-    print("\n► Training VanillaBaselineCNN baseline...")
-    t0 = time.time()
-    _, baseline_preds, baseline_probs = train_baseline(
-        raw_images=raw_images,
-        labels=true_labels,
-        epochs=10,
-        batch_size=32,
+    test_loader = DataLoader(
+        test_data,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
     )
-    baseline_time = time.time() - t0
-    print(f"  Baseline training + inference time: {baseline_time:.2f}s")
+    print(f"  Cached test set: {len(test_data)} samples")
 
-    # ------------------------------------------------------------------
-    # Step 5: Compute all metrics
-    # ------------------------------------------------------------------
-    print("\n► Computing metrics...")
+    # Load raw images for baseline CNN
+    raw_test_data = RawPixelDataset(parquet_file=PARQUET_FILE, split="test")
+
+    # Shuffled loader for training the baseline.
+    baseline_train_loader = DataLoader(
+        raw_test_data,
+        batch_size=BASELINE_BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+    )
+    # Unshuffled loader for collecting predictions in order.
+    baseline_eval_loader = DataLoader(
+        raw_test_data,
+        batch_size=BASELINE_BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+    )
+    print(f"  Raw test set: {len(raw_test_data)} images")
+
+
+    model = MultiViewNet(MODEL_CONFIGURATION).to(DEVICE)
+    model.load_state_dict(torch.load(BEST_MODEL_PATH, map_location=DEVICE))
+    mvl_results = collect_multiview_predictions(model, test_loader)
+    true_labels = mvl_results["true_labels"]
+
+    baseline_preds = train_and_predict_baseline(
+        baseline_train_loader,
+        baseline_eval_loader,
+    )
 
     all_metrics = []
-    roc_data = {}
-    pr_data = {}
 
-    # Fusion head metrics.
-    fusion_metrics = compute_metrics(
-        labels, fusion_preds, fusion_probs, model_name="MVL Fusion"
-    )
-    all_metrics.append(fusion_metrics)
-    roc_data["MVL Fusion"] = {
-        "labels": labels,
-        "probs": fusion_probs,
-        "auc": fusion_metrics["roc_auc"],
-    }
-    pr_data["MVL Fusion"] = {
-        "labels": labels,
-        "probs": fusion_probs,
-        "ap": fusion_metrics["avg_precision"],
-    }
-
-    # Per-branch metrics.
-    branch_metrics = {}
-    for name in BRANCH_NAMES:
-        if name not in branch_probs:
-            print(f"  ⚠️  Branch '{name}' had no predictions — skipping.")
-            continue
-        bm = compute_metrics(
-            labels,
-            branch_preds[name],
-            branch_probs[name],
-            model_name=f"Branch: {name.upper()}",
-        )
-        branch_metrics[name] = bm
-        all_metrics.append(bm)
-        roc_data[f"Branch {name.upper()}"] = {
-            "labels": labels,
-            "probs": branch_probs[name],
-            "auc": bm["roc_auc"],
-        }
-        pr_data[f"Branch {name.upper()}"] = {
-            "labels": labels,
-            "probs": branch_probs[name],
-            "ap": bm["avg_precision"],
-        }
-
-    # Baseline metrics.
-    baseline_metrics = compute_metrics(
+    # Fusion head.
+    fusion_m = compute_all_metrics(
         true_labels,
-        baseline_preds,
-        baseline_probs,
-        model_name="Vanilla CNN Baseline",
+        mvl_results["fusion"]["predictions"],
+        mvl_results["fusion"]["probabilities"],
+        "MVL Fusion",
     )
-    all_metrics.append(baseline_metrics)
-    roc_data["Vanilla CNN"] = {
-        "labels": true_labels,
-        "probs": baseline_probs,
-        "auc": baseline_metrics["roc_auc"],
-    }
-    pr_data["Vanilla CNN"] = {
-        "labels": true_labels,
-        "probs": baseline_probs,
-        "ap": baseline_metrics["avg_precision"],
-    }
+    all_metrics.append(fusion_m)
 
-    # ------------------------------------------------------------------
-    # Step 6: Visualisations
-    # ------------------------------------------------------------------
-    print("\n► Generating visualisations...")
-
-    # Confusion matrices.
-    plot_confusion_matrix(
-        labels, fusion_preds, "MVL Fusion", RESULTS_DIR
-    )
-    plot_confusion_matrix(
-        true_labels, baseline_preds, "Vanilla CNN Baseline", RESULTS_DIR
-    )
-    for name in branch_metrics:
-        plot_confusion_matrix(
-            labels,
-            branch_preds[name],
-            f"Branch {name.upper()}",
-            RESULTS_DIR,
+    # Individual branches.
+    branch_m = {}
+    for bname, bdata in mvl_results["branches"].items():
+        bm = compute_all_metrics(
+            true_labels, bdata["predictions"], bdata["probabilities"],
+            f"Branch {bname.upper()}",
         )
+        branch_m[bname] = bm
+        all_metrics.append(bm)
 
-    # Curve plots.
-    plot_roc_curves(roc_data, RESULTS_DIR)
-    plot_precision_recall_curves(pr_data, RESULTS_DIR)
+    # Baseline CNN.
+    baseline_m = compute_all_metrics(
+        baseline_preds["labels"],
+        baseline_preds["predictions"],
+        baseline_preds["probabilities"],
+        "Baseline CNN",
+    )
+    all_metrics.append(baseline_m)
 
-    # Metric bar chart.
+
+    #  confusion matrix for baseline:
+    plot_confusion_matrix(
+        baseline_preds["labels"], baseline_preds["predictions"],
+        "Baseline CNN", RESULTS_DIR)
+
+    # curve data for baseline:
+    curve_data["Baseline CNN"] = {
+        "true_labels": baseline_preds["labels"],
+        "probabilities": baseline_preds["probabilities"],
+        "roc_auc": baseline_m["roc_auc"]
+    }
+    for bname in branch_m:
+        curve_data[f"Branch {bname.upper()}"] = {
+            "true_labels": true_labels,
+            "probabilities": mvl_results["branches"][bname]["probabilities"],
+            "roc_auc": branch_m[bname]["roc_auc"]
+        }
+
+    plot_roc_curves(curve_data, RESULTS_DIR)
+
+    # 7c. Bar charts and heatmaps.
     plot_metrics_bar(all_metrics, RESULTS_DIR)
+    if branch_m:
+        plot_branch_heatmap(branch_m, RESULTS_DIR)
+        plot_branch_vs_fusion(fusion_m, branch_m, RESULTS_DIR)
 
-    # Branch heatmap (only branches, not fusion or baseline).
-    if branch_metrics:
-        plot_branch_heatmap(branch_metrics, RESULTS_DIR)
 
-    # Radar overview.
-    radar_models = [m for m in all_metrics if m["model"] in
-                    ("MVL Fusion", "Vanilla CNN Baseline")]
-    if radar_models:
-        plot_performance_overview(radar_models, RESULTS_DIR)
-
-    # ------------------------------------------------------------------
-    # Step 7: Final comparison table
-    # ------------------------------------------------------------------
-    print(f"\n{'=' * 60}")
-    print("  FINAL PERFORMANCE SUMMARY")
-    print(f"{'=' * 60}")
-    header = f"{'Model':<30} {'Acc':>7} {'F1':>7} {'AUC':>7} {'AP':>7}"
-    print(header)
-    print("─" * len(header))
+    print(f"  {'Model':<25s} {'Acc':>7s} {'Prec':>7s} {'Rec':>7s} {'F1':>7s} {'AUC':>7s}")
     for m in all_metrics:
-        print(
-            f"{m['model']:<30} "
-            f"{m['accuracy']:>7.4f} "
-            f"{m['f1']:>7.4f} "
-            f"{m['roc_auc']:>7.4f} "
-            f"{m['avg_precision']:>7.4f}"
-        )
-    print(f"{'=' * 60}")
+        print(f"  {m['name']:<25s} {m['accuracy']:>7.4f} {m['precision']:>7.4f} "
+              f"{m['recall']:>7.4f} {m['f1']:>7.4f} {m['roc_auc']:>7.4f}")
 
-    # Improvement of fusion over baseline.
-    fusion_acc = fusion_metrics["accuracy"]
-    baseline_acc = baseline_metrics["accuracy"]
-    delta = fusion_acc - baseline_acc
-    symbol = "📈" if delta > 0 else "📉"
-    print(
-        f"\n{symbol}  MVL Fusion vs Baseline accuracy: "
-        f"{delta:+.4f}  "
-        f"({'outperforms' if delta > 0 else 'underperforms'} baseline)"
-    )
+    # Fusion vs baseline.
+    d_acc = fusion_m["accuracy"] - baseline_m["accuracy"]
+    d_f1 = fusion_m["f1"] - baseline_m["f1"]
+    print(f"     Accuracy: {d_acc:+.4f}")
+    print(f"     F1:       {d_f1:+.4f}")
 
-    print(f"\n✅  All results saved to: {RESULTS_DIR.resolve()}")
+    if branch_m:
+        best = max(branch_m.items(), key=lambda x: x[1]["f1"])
+        print(f"\n  Best branch: {best[0].upper()} (F1={best[1]['f1']:.4f})")
+        if all(fusion_m["f1"] >= bm["f1"] for bm in branch_m.values()):
+            print("  Fusion outperforms all individual branches.")
+        else:
+            print(" Fusion does not beat all branches.")
 
-
-# ==============================================================================
-# ENTRY POINT
-# ==============================================================================
+    print(f"\n  All plots saved to: {RESULTS_DIR.resolve()}")
 
 if __name__ == "__main__":
-    evaluate()
+    main()
