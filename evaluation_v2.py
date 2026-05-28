@@ -1,4 +1,3 @@
-import logging
 import time
 from pathlib import Path
 
@@ -68,14 +67,6 @@ from MVL_AI_Classifier.constants import (
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-log = logging.getLogger(name)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -213,21 +204,21 @@ class BaselineCNN(nn.Module):
     ------------
 
     Block 1 :
-        Conv(3→16, 3×3)
+        Conv(3→16, 3x3)
         → BN
         → ReLU
         → MaxPool(2)
 
     Block 2 :
-        Conv(16→32, 3×3)
+        Conv(16→32, 3x3)
         → BN
         → ReLU
         → MaxPool(2)
 
     Block 3 :
-        Conv(32→64, 3×3)
+        Conv(32→64, 3x3)
         → ReLU
-        → AdaptiveAvgPool(4×4)
+        → AdaptiveAvgPool(4x4)
 
     Head :
         Linear(1024→128)
@@ -370,12 +361,6 @@ def train_and_predict_baseline(
 
             epoch_loss += loss.item()
 
-        log.info(
-            "Baseline epoch %d/%d loss=%.4f",
-            epoch + 1,
-            BASELINE_EPOCHS,
-            epoch_loss / len(train_loader),
-        )
 
     model.eval()
 
@@ -508,7 +493,7 @@ def collect_multiview_predictions(
         "fusion": {
             "probabilities": fusion_probs,
 
-            "predictions": predictions_from_probabilities(
+            "predictions": _predictions_from_probabilities(
                 fusion_probs
             ),
         },
@@ -527,7 +512,7 @@ def collect_multiview_predictions(
             result["branches"][name] = {
                 "probabilities": probs,
 
-                "predictions": predictions_from_probabilities(
+                "predictions": _predictions_from_probabilities(
                     probs
                 ),
             }
@@ -762,11 +747,6 @@ def compute_per_generator_accuracy(
         index=False,
     )
 
-    log.info(
-        "Per-generator CSV saved: %s",
-        csv_path,
-    )
-
     return results_df
 
 
@@ -784,8 +764,6 @@ def save_and_close(path: Path) -> None:
     plt.savefig(path, dpi=150)
 
     plt.close()
-
-    log.info("Saved: %s", path)
 
 
 def plot_confusion_matrix(
@@ -841,9 +819,7 @@ def plot_confusion_matrix(
     save_and_close(
         save_dir
         / f"cm{name.replace(' ', '').lower()}.png"
-    )
 
-```python
 )
 
 
@@ -878,7 +854,7 @@ def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    _save_and_close(save_dir / "roc_curves.png")
+    save_and_close(save_dir / "roc_curves.png")
 
 
 def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
@@ -913,7 +889,7 @@ def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
     ax.set_ylim(0, 1.05)
 
     plt.tight_layout()
-    _save_and_close(save_dir / "pr_curves.png")
+    save_and_close(save_dir / "pr_curves.png")
 
 
 def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
@@ -985,7 +961,7 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    _save_and_close(save_dir / "metrics_bar.png")
+    save_and_close(save_dir / "metrics_bar.png")
 
 
 def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
@@ -1060,7 +1036,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
             )
 
     plt.tight_layout()
-    _save_and_close(save_dir / "branch_heatmap.png")
+    save_and_close(save_dir / "branch_heatmap.png")
 
 
 def plot_branch_vs_fusion(
@@ -1137,7 +1113,7 @@ def plot_branch_vs_fusion(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    _save_and_close(save_dir / "branch_vs_fusion.png")
+    save_and_close(save_dir / "branch_vs_fusion.png")
 
 
 def plot_per_generator_accuracy(
@@ -1294,11 +1270,6 @@ def main() -> None:
     """Run the full evaluation pipeline."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    log.info("Device: %s", DEVICE)
-    log.info(
-        "Results directory: %s",
-        RESULTS_DIR.resolve(),
-    )
 
     # ── 1. Cached test features (multi-view model) ─────────────────────────
 
@@ -1322,10 +1293,6 @@ def main() -> None:
         num_workers=NUM_WORKERS,
     )
 
-    log.info(
-        "Test set (cached): %d samples",
-        len(test_data),
-    )
 
     # ── 2. Raw pixel dataset (baseline CNN) ────────────────────────────────
 
@@ -1348,33 +1315,18 @@ def main() -> None:
         num_workers=NUM_WORKERS,
     )
 
-    log.info(
-        "Test set (raw pixels): %d images",
-        len(raw_test_data),
-    )
 
     # ── 3. Load MultiViewNet ───────────────────────────────────────────────
 
     mvl_model = MultiViewNet(MODEL_CONFIGURATION).to(DEVICE)
 
-    if BEST_MODEL_PATH.exists():
-        mvl_model.load_state_dict(
+    mvl_model.load_state_dict(
             torch.load(
                 BEST_MODEL_PATH,
                 map_location=DEVICE,
             )
         )
 
-        log.info(
-            "Loaded model weights: %s",
-            BEST_MODEL_PATH,
-        )
-
-    else:
-        log.warning(
-            "Model file not found at %s — using random weights.",
-            BEST_MODEL_PATH,
-        )
 
     # ── 4. Multi-view inference ────────────────────────────────────────────
 
@@ -1385,19 +1337,11 @@ def main() -> None:
         test_loader,
     )
 
-    log.info(
-        "Multi-view inference complete in %.1fs",
-        time.time() - t0,
-    )
 
     true_labels = mvl_results["true_labels"]
 
     # ── 5. Baseline training and inference ────────────────────────────────
 
-    log.info(
-        "Training baseline CNN for %d epochs...",
-        BASELINE_EPOCHS,
-    )
 
     baseline_preds = train_and_predict_baseline(
         baseline_train_loader,
@@ -1540,11 +1484,6 @@ def main() -> None:
         fusion_m,
         baseline_m,
         branch_m,
-    )
-
-    log.info(
-        "All results saved to: %s",
-        RESULTS_DIR.resolve(),
     )
 
 
