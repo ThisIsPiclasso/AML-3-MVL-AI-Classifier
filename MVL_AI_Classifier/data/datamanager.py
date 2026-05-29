@@ -95,9 +95,7 @@ class DataManager:
             try:
                 # This calls malloc_trim, clearing out memory fragmentation fragmentation
                 ctypes.CDLL("libc.so.6").malloc_trim(0)
-                print(
-                    "🧹 [SYSTEM] Hardware memory pages successfully trimmed and released to Docker."
-                )
+                print("clearing ram")
             except Exception:
                 pass
 

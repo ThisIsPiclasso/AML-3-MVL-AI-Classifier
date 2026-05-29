@@ -35,14 +35,12 @@ class CachedDataClass(Dataset):
 
             # 🚀 3. THE LIVE CHUNK BUFFER INGESTION LOGIC
             # Read rows from disk sequentially and slide them into the pre-allocated RAM structures
-            print(
-                f"📥 [DISK ──> RAM] Pulling {total_slice_samples:,} samples into hardware buffer layout..."
-            )
+            print(f"loading {total_slice_samples:,} samples ")
 
             # Setup a master progress bar tracking rows allocated
             with tqdm(
                 total=total_slice_samples,
-                desc="Allocating RAM Tensors",
+                desc="allocating RAM for tensors",
                 unit="rows",
                 leave=False,
             ) as pbar:
