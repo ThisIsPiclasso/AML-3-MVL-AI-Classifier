@@ -16,7 +16,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from PIL import Image, ImageFile
-from tqdm import tqdm
 
 from sklearn.metrics import (
     accuracy_score,
@@ -444,11 +443,7 @@ def collect_multiview_predictions(
 
     with torch.no_grad():
 
-        for batch in tqdm(
-            test_loader,
-            desc="MVL inference",
-            unit="batch",
-        ):
+        for batch in test_loader:
 
             views = {
                 name: t.to(DEVICE)
