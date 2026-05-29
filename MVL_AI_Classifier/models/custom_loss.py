@@ -11,6 +11,7 @@ It sums:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from MVL_AI_Classifier.constants import DEFAULT_EPSILON
 
 
 class DistillationLoss(nn.Module):
@@ -54,7 +55,7 @@ class DistillationLoss(nn.Module):
         # Teacher uses softmax to form target probability distribution
         student_log_probs = F.log_softmax(student_logits / t, dim=1)
         teacher_probs = F.softmax(teacher_logits / t, dim=1)
-
+        teacher_probs = torch.clamp(teacher_probs, min=DEFAULT_EPSILON, max=1.0)
         # KL divergence between teacher (target) and student (input)
         # Scaled by t^2 to maintain consistent gradient magnitude across temperatures
         return self.kl(student_log_probs, teacher_probs) * (t**2)
