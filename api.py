@@ -8,7 +8,18 @@ from MVL_AI_Classifier.constants import PATCH_SIZE
 
 app = FastAPI(
     title="Multi-view AI Detection API",
-    description="Advanced API pipeline designed to analyze images for synthetic or AI-generated manipulation signatures.",
+    descritpion="""
+    This enterprise-grade REST API hosts a **4-branch forensic neural network** optimized to detect synthetic, AI-generated, or structurally manipulated digital media.
+    
+    ### Core Capabilities
+    *  **Noise Residual Extraction:** Evaluates camera sensor pattern inconsistencies.
+    *  **Frequency Domain Analysis:** Cross-references Discrete Cosine (DCT) and Amplitude Spectrum (APS) profiles.
+    *  **Texture Mapping:** Examines micro-textures using Gray-Level Co-occurrence Matrices (GLCM).
+    
+    ### Operational Constraints
+    Input payloads must be structural valid `.jpg`, `.jpeg`, or `.png` files satisfying a minimum spatial bounding canvas of **256x256 pixels**.
+    """,
+    version="1.0.0",
 )
 
 
