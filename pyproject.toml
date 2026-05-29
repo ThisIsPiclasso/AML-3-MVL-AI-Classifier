@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.136.3",
     "h5py>=3.16.0",
     "optuna>=4.8.0",
     "tensorboard>=2.20.0",
