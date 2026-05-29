@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from torch.utils.data import DataLoader
 
 from MVL_AI_Classifier.models.layer_arc import MODEL_DICTIONARY
 from MVL_AI_Classifier.constants import (
@@ -101,7 +101,11 @@ class MultiViewNet(nn.Module):
         }
 
     def tune(
-        self, data_manager, n_trials: int = N_TRIALS, timeout: int = MAX_TRAINING_TIME
+        self,
+        data_manager,
+        study,
+        n_trials: int = N_TRIALS,
+        timeout: int = MAX_TRAINING_TIME,
     ) -> dict:
         """Runs an automated hyperparameter tuning sweep on this architecture configuration.
 
@@ -120,6 +124,12 @@ class MultiViewNet(nn.Module):
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"tuning  on device: {device}")
+        train_loaders = data_manager.get_train_loaders(only_first_section=True)
+        first_loader = next(train_loaders)
+        tuning_train_dataset = first_loader.dataset  # Extract the raw memory arrays
+
+        val_loader = data_manager.get_val_loader()
+        tuning_val_dataset = val_loader.dataset
 
         def objective(trial: optuna.Trial) -> float:
             """
@@ -139,9 +149,21 @@ class MultiViewNet(nn.Module):
             # Initialize custom multi-view loss module using tuned configurations
             criterion = MultiViewLoss(alpha=alpha, beta=beta, temperature=temperature)
 
-            # building val loader and setting batch size
-            data_manager.batch_size = batch_size
-            val_loader = data_manager.get_val_loader()
+            train_loader = DataLoader(
+                tuning_train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=0,
+                pin_memory=True,
+            )
+
+            val_loader = DataLoader(
+                tuning_val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=0,
+                pin_memory=True,
+            )
             # Model setup using the custom architecture
             model = MultiViewNet(
                 view_configuration=self.view_configuration,
@@ -155,12 +177,14 @@ class MultiViewNet(nn.Module):
 
             for epoch in range(MAX_TUNE_EPOCHS):
                 # Training loop
-                for train_loader in data_manager.get_train_loaders(
-                    only_first_section=True
-                ):
-                    _, _, _ = train_epoch(
-                        model, train_loader, optimizer, criterion, device
-                    )
+                # for train_loader in data_manager.get_train_loaders(
+                #    only_first_section=True
+                # ):
+                #    _, _, _ = train_epoch(
+                #        model, train_loader, optimizer, criterion, device
+                #    )
+
+                _, _, _ = train_epoch(model, train_loader, optimizer, criterion, device)
 
                 val_loss, val_accuracy = validate(model, val_loader, criterion, device)
 
@@ -174,14 +198,6 @@ class MultiViewNet(nn.Module):
 
             trial.set_user_attr("accuracy", val_accuracy)
             return val_loss
-
-        # Initialise Optuna study with automated pruner logic
-        study = optuna.create_study(
-            direction="minimize",
-            pruner=optuna.pruners.MedianPruner(
-                n_startup_trials=3, n_warmup_steps=1, interval_steps=1
-            ),
-        )
 
         # Start optimisation
         study.optimize(
