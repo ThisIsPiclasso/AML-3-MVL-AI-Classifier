@@ -173,11 +173,33 @@ def validate(model, dataloader, loss_function, device):
 if __name__ == "__main__":
     # The training is commented out for now.
     # After we get the best hyperparameters, we will run the main training.
-    main()
+    # main()
+    import optuna
 
+    tuning_data_manager = DataManager(
+        view_configuration=MODEL_CONFIGURATION,
+        batch_size=BATCH_SIZE,
+        use_cache=True,
+        num_sections=3,
+    )
     tuning_network = MultiViewNet(MODEL_CONFIGURATION)
+    study = optuna.create_study(
+        study_name="multiview_hyperparameter_sweep",
+        storage="sqlite:///optuna_tuning.db",
+        direction="minimize",
+        load_if_exists=True,
+        pruner=optuna.pruners.MedianPruner(
+            n_startup_trials=3, n_warmup_steps=1, interval_steps=1
+        ),
+    )
 
+    print("🚀 Triggering 24-Hour Hyperparameter Sweep with SQLite Storage Core...")
+
+    # 4. 🚀 PASS BOTH OBJECTS INTO THE TUNING METHOD
+    best_hyperparameters = tuning_network.tune(
+        data_manager=tuning_data_manager, study=study
+    )
     # Modify parameters of the tuning function in constants.py
-    # best_hyperparameters = tuning_network.tune()
+    best_hyperparameters = tuning_network.tune(tuning_data_manager)
 
-    # print(f"Optimized Parameters: {best_hyperparameters}")
+    print(f"Optimized Parameters: {best_hyperparameters}")

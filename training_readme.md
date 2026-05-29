@@ -41,9 +41,28 @@ create a new terminal
 tmux new -s train_monitor
 ```
 ```
-tensorboard --logdir=runs/ --port=6006 --host=0.0.0.0
+uv run tensorboard --logdir=runs --host=0.0.0.0 --port=6006
 ```
 press Ctrl + B and then D
 
 The dashboard can be found on:
 http://code-workspace:6006/
+
+# Tuning
+
+create terminal
+```
+tmux new -s tune_monitor
+```
+```
+uvx optuna-dashboard sqlite:///optuna_tuning.db --host 0.0.0.0 --port 8080
+```
+Ctrl + B then D
+
+create terminal
+```
+tmux new -s tune_terminal
+```
+```
+uv run train.py
+```
