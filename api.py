@@ -91,6 +91,7 @@ async def inf(file: UploadFile = File(None)):
             detail=f"Image size is too small ({width}x{height}px). Minimum size required is {PATCH_SIZE}x{PATCH_SIZE}px.",
         )
 
+    # Placeholder for actual prediction code, e.g., prediction, confidence = model.predict(img)
     prediction, confidence = model.predict(img)
 
     prediction_result = {"prediction": prediction, "confidence": confidence}
