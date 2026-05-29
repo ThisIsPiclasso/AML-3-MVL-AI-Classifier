@@ -12,7 +12,6 @@ app = FastAPI(
 )
 
 
-# Placeholder for model loading function
 class PredictionOutput(BaseModel):
     """
     Pydantic model defining the structure of the API response for image classification results.
@@ -26,6 +25,16 @@ class PredictionOutput(BaseModel):
     )
 
 
+class Config:
+    """
+    Pydantic model configuration class to provide additional metadata for API documentation.
+    """
+
+    json_schema_extra = {
+        "example": {"prediction": "Synthetic/Fake", "confidence": 0.9845}
+    }
+
+
 request_history = {}
 # Replace with actual model loading code, e.g., model = load_model("path_to_model")
 model = None
@@ -33,7 +42,10 @@ model = None
 
 @app.post(
     "/api_post/",
-    response_model=PredictionOutput,  # <-- Tells FastAPI docs what data types to expect
+    response_model=PredictionOutput,
+    summary="Evaluate an image file for AI-generation signatures",
+    description="Accepts an image file upload and returns a classification result indicating whether the image is",
+    response_description="A structured JSON footprint detailing forensic evaluation results.",
     status_code=200,
 )
 async def inf(file: UploadFile = File(None)):
