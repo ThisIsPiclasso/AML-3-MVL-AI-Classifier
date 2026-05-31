@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # Prevent images from opening in a GUI during runs.
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
@@ -74,13 +74,11 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 RESULTS_DIR = Path("evaluation_results")
 
 CLASS_NAMES = [
-    "Real",
-    "AI-Generated",
+    "Real", #0
+    "AI-Generated", #1
 ]
 
-DEVICE = torch.device(
-    "cuda" if torch.cuda.is_available() else "cpu"
-)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 BRANCH_NAMES = [
     "aps",
@@ -122,11 +120,10 @@ MODEL_CONFIGURATION = {
 
 BEST_MODEL_PATH = Path("best_multiview_model.pt")
 
-CACHE_DIR = Path(
-    "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
-)
+CACHE_DIR = Path("/workspace/AML-3-MVL-AI-Classifier/data/data_cache")
 
 TEST_CACHE_PATH = CACHE_DIR / "test_features.h5"
+
 
 # ---------------------------------------------------------------------------
 # Dataset
@@ -134,54 +131,53 @@ TEST_CACHE_PATH = CACHE_DIR / "test_features.h5"
 
 
 class RawPixelDataset(DataClass):
-    """
-    DataClass subclass that returns raw pixel patches instead of
-    preprocessed views.
+    """Dataset that returns raw RGB pixel patches.
 
-    Reuses DataClass's parquet loading, split filtering,
-    and center-crop patch extraction.
+    This subclass reuses the parquet loading, split filtering, and patch
+    extraction logic provided by ``DataClass``. It skips all view
+    preprocessors and only returns the raw patch as a tensor
 
-    Returns the raw
-    (3, PATCH_SIZE, PATCH_SIZE) float32 tensor
-    normalised to [0, 1]
-    rather than running the four view preprocessors.
-
-    Used by the baseline CNN which operates on raw pixels.
+    Attributes:
+        Inherited from ``DataClass``.
     """
 
-    def init(
+    def __init__(
         self,
         parquet_file: str,
         split: str = "test",
     ) -> None:
-        super().init(
+        """Initialize the dataset for a specific parquet file and split.
+
+        Args:
+            parquet_file: Path to the parquet file containing metadata.
+            split: Dataset split to load. Defaults to ``"test"``.
+        """
+        super().__init__(
             parquet_file=parquet_file,
             view_configuration={},
             split=split,
         )
 
-    def getitem(self, idx: int) -> dict:
+    def __getitem__(self, idx: int) -> dict:
+        """Return one sample as an image-label dictionary.
+
+        Args:
+            idx: Integer row index into the dataset.
+
+        Returns:
+            A dictionary with:
+                - ``"image"``: Float32 tensor of shape ``(3, H, W)`` in ``[0, 1]``.
+                - ``"label"``: Long tensor containing the binary class label.
+        """
         item = self.df.iloc[idx]
 
-        image = Image.open(
-            item["path"]
-        ).convert("RGB")
+        with Image.open(item["path"]) as image:
+            patch = self._get_patch(image, idx)
 
-        patch = self._get_patch(image, idx)
+        pixel_array = np.array(patch, dtype=np.float32) / 255.0
+        pixel_tensor = torch.from_numpy(pixel_array.transpose(2, 0, 1)) #from (Height, Width, Colour) to (Colour, Height, Width)
 
-        # (H, W, C) uint8  →  (C, H, W) float32 in [0, 1]
-        pixel_array = (
-            np.array(patch, dtype=np.float32) / 255.0
-        )
-
-        pixel_tensor = torch.from_numpy(
-            pixel_array.transpose(2, 0, 1)
-        )
-
-        label = torch.tensor(
-            int(item["label"]),
-            dtype=torch.long,
-        )
+        label = torch.tensor(int(item["label"]), dtype=torch.long)
 
         return {
             "image": pixel_tensor,
@@ -195,51 +191,48 @@ class RawPixelDataset(DataClass):
 
 
 class BaselineCNN(nn.Module):
-    """
-    Three-block CNN that classifies raw
-    (3, 256, 256) pixel patches.
+    """Three-block CNN for raw RGB pixel patches as baseline.
 
-    Architecture
-    ------------
+    The model consumes tensors of shape ``(B, 3, 256, 256)`` and produces
+    binary logits of shape ``(B, 2)``
+    Architecture:
+        Block 1:
+            Conv2d(3 -> 16, kernel_size=3, padding=1)
+            BatchNorm2d(16)
+            ReLU
+            MaxPool2d(2)
 
-    Block 1 :
-        Conv(3→16, 3x3)
-        → BN
-        → ReLU
-        → MaxPool(2)
+        Block 2:
+            Conv2d(16 -> 32, kernel_size=3, padding=1)
+            BatchNorm2d(32)
+            ReLU
+            MaxPool2d(2)
 
-    Block 2 :
-        Conv(16→32, 3x3)
-        → BN
-        → ReLU
-        → MaxPool(2)
+        Block 3:
+            Conv2d(32 -> 64, kernel_size=3, padding=1)
+            ReLU
+            AdaptiveAvgPool2d((4, 4))
 
-    Block 3 :
-        Conv(32→64, 3x3)
-        → ReLU
-        → AdaptiveAvgPool(4x4)
-
-    Head :
-        Linear(1024→128)
-        → ReLU
-        → Dropout(0.3)
-        → Linear(128→2)
+        Head:
+            Linear(1024 -> 128)
+            ReLU
+            Dropout(0.3)
+            Linear(128 -> 2)
     """
 
-    def init(self) -> None:
-        super().init()
+    def __init__(self) -> None:
+        """Build the CNN feature extractor and classifier head."""
+        super().__init__()
 
         self.features = nn.Sequential(
             nn.Conv2d(3, 16, 3, padding=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-
             nn.Conv2d(16, 32, 3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(2, 2),
-
             nn.Conv2d(32, 64, 3, padding=1),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((4, 4)),
@@ -253,12 +246,15 @@ class BaselineCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(
-            torch.flatten(
-                self.features(x),
-                1,
-            )
-        )
+        """Run a forward pass.
+
+        Args:
+            x: Input tensor of shape ``(B, 3, H, W)``.
+
+        Returns:
+            Logits tensor of shape ``(B, 2)``.
+        """
+        return self.classifier(torch.flatten(self.features(x), 1))
 
 
 # ---------------------------------------------------------------------------
@@ -266,25 +262,27 @@ class BaselineCNN(nn.Module):
 # ---------------------------------------------------------------------------
 
 
-def _probabilities_from_logits(
-    logits: torch.Tensor,
-) -> np.ndarray:
+def _probabilities_from_logits(logits: torch.Tensor) -> np.ndarray:
+    """Convert 2-class logits to positive-class probabilities (AI-generated)
+
+    Args:
+        logits: Tensor of shape ``(B, 2)`` containing raw model outputs.
+
+    Returns:
+        NumPy array of shape ``(B,)`` containing the probability of class 1 (AI-generated)
+
     """
-    Convert (B, 2) logits to (B,)
-    positive-class probabilities.
-    """
-    return torch.softmax(
-        logits,
-        dim=1,
-    )[:, 1].cpu().numpy()
+    return torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
 
 
-def _predictions_from_probabilities(
-    probabilities: np.ndarray,
-) -> np.ndarray:
-    """
-    Threshold probabilities at 0.5
-    to produce binary (int64) predictions.
+def _predictions_from_probabilities(probabilities: np.ndarray) -> np.ndarray:
+    """Threshold probabilities at 0.5 for a binary predictions.
+
+    Args:
+        probabilities: NumPy array of positive-class probabilities.
+
+    Returns:
+        NumPy array of dtype ``int64`` with values 0 or 1.
     """
     return (probabilities >= 0.5).astype(np.int64)
 
@@ -298,68 +296,38 @@ def train_and_predict_baseline(
     train_loader: DataLoader,
     eval_loader: DataLoader,
 ) -> dict:
-    """
-    Train a BaselineCNN and return its predictions
-    on the eval set.
+    """Train the baseline CNN and collect predictions on the evaluation split.
 
-    Note:
-        The current setup trains and evaluates
-        on the same underlying test-split dataset
-        (train-on-test), which is a known simplification.
-
-        train_loader is shuffled;
-        eval_loader is not.
+    The pipeline trains and evaluates on the SAME underlying test split
+    as a baseline. The training loader is shuffled; the evaluation
+    loader is not.
 
     Args:
-        train_loader:
-            Shuffled DataLoader yielding
-            {"image", "label"} dicts.
-
-        eval_loader:
-            Unshuffled DataLoader yielding
-            {"image", "label"} dicts.
+        train_loader: Shuffled DataLoader yielding dictionaries with keys
+            ``"image"`` and ``"label"``.
+        eval_loader: Unshuffled DataLoader yielding dictionaries with keys
+            ``"image"`` and ``"label"``.
 
     Returns:
-        Dict with keys:
-            "labels",
-            "probabilities",
-            and "predictions"
-
-        as numpy arrays of length N.
+        Dictionary with keys:
+            - ``"labels"``: Ground-truth labels as a NumPy array.
+            - ``"probabilities"``: Positive-class probabilities as a NumPy array.
+            - ``"predictions"``: Binary predictions as a NumPy array.
     """
-
     model = BaselineCNN().to(DEVICE)
-
     criterion = nn.CrossEntropyLoss()
-
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=BASELINE_LR,
-    )
+    optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
 
     model.train()
-
-    for epoch in range(BASELINE_EPOCHS):
-
-        epoch_loss = 0.0
-
+    for _epoch in range(BASELINE_EPOCHS):
         for batch in train_loader:
-
             images = batch["image"].to(DEVICE)
             labels = batch["label"].to(DEVICE)
 
             optimizer.zero_grad()
-
-            loss = criterion(
-                model(images),
-                labels,
-            )
-
+            loss = criterion(model(images), labels)
             loss.backward()
             optimizer.step()
-
-            epoch_loss += loss.item()
-
 
     model.eval()
 
@@ -367,20 +335,11 @@ def train_and_predict_baseline(
     all_labels: list[np.ndarray] = []
 
     with torch.no_grad():
-
         for batch in eval_loader:
-
             images = batch["image"].to(DEVICE)
 
-            all_probs.append(
-                _probabilities_from_logits(
-                    model(images)
-                )
-            )
-
-            all_labels.append(
-                batch["label"].numpy()
-            )
+            all_probs.append(_probabilities_from_logits(model(images)))
+            all_labels.append(batch["label"].cpu().numpy())
 
     probabilities = np.concatenate(all_probs)
     labels_array = np.concatenate(all_labels)
@@ -388,9 +347,7 @@ def train_and_predict_baseline(
     return {
         "labels": labels_array,
         "probabilities": probabilities,
-        "predictions": _predictions_from_probabilities(
-            probabilities
-        ),
+        "predictions": _predictions_from_probabilities(probabilities),
     }
 
 
@@ -398,30 +355,23 @@ def collect_multiview_predictions(
     model: MultiViewNet,
     test_loader: DataLoader,
 ) -> dict:
-    """
-    Run a trained MultiViewNet over the test set
-    and collect all predictions.
+    """Run a trained multi-view model over the test set and collect outputs.
 
     Args:
-        model:
-            Trained MultiViewNet already moved to DEVICE.
-
-        test_loader:
-            DataLoader built from CachedDataClass.
+        model: Trained ``MultiViewNet``
+        test_loader: DataLoader built from ``CachedDataClass``.
 
     Returns:
-        Dict with the following structure::
+        Dictionary with this structure::
 
             {
                 "true_labels": np.ndarray,
-
                 "fusion": {
                     "probabilities": np.ndarray,
                     "predictions": np.ndarray,
                 },
-
                 "branches": {
-                    "<name>": {
+                    "<branch_name>": {
                         "probabilities": np.ndarray,
                         "predictions": np.ndarray,
                     },
@@ -429,87 +379,48 @@ def collect_multiview_predictions(
                 },
             }
     """
-
     model.eval()
 
     all_labels: list[np.ndarray] = []
-
     all_fusion_probs: list[np.ndarray] = []
-
-    all_branch_probs: dict[str, list] = {
-        name: []
-        for name in BRANCH_NAMES
-    }
+    all_branch_probs: dict[str, list[np.ndarray]] = {name: [] for name in BRANCH_NAMES}
 
     with torch.no_grad():
-
         for batch in test_loader:
-
-            views = {
-                name: t.to(DEVICE)
-                for name, t in batch["views"].items()
-            }
-
+            views = {name: tensor.to(DEVICE) for name, tensor in batch["views"].items()}
             labels = batch["label"].to(DEVICE)
 
             outputs = model(views)
 
-            all_fusion_probs.append(
-                _probabilities_from_logits(
-                    outputs["fusion"]
-                )
-            )
+            all_fusion_probs.append(_probabilities_from_logits(outputs["fusion"]))
 
             if "branches" in outputs:
-
                 for name in BRANCH_NAMES:
-
                     if name in outputs["branches"]:
-
                         all_branch_probs[name].append(
-                            _probabilities_from_logits(
-                                outputs["branches"][name]
-                            )
+                            _probabilities_from_logits(outputs["branches"][name])
                         )
 
-            all_labels.append(
-                labels.cpu().numpy()
-            )
+            all_labels.append(labels.cpu().numpy())
 
     true_labels = np.concatenate(all_labels)
-
-    fusion_probs = np.concatenate(
-        all_fusion_probs
-    )
+    fusion_probs = np.concatenate(all_fusion_probs)
 
     result: dict = {
         "true_labels": true_labels,
-
         "fusion": {
             "probabilities": fusion_probs,
-
-            "predictions": _predictions_from_probabilities(
-                fusion_probs
-            ),
+            "predictions": _predictions_from_probabilities(fusion_probs),
         },
-
         "branches": {},
     }
 
     for name in BRANCH_NAMES:
-
         if all_branch_probs[name]:
-
-            probs = np.concatenate(
-                all_branch_probs[name]
-            )
-
+            probs = np.concatenate(all_branch_probs[name])
             result["branches"][name] = {
                 "probabilities": probs,
-
-                "predictions": _predictions_from_probabilities(
-                    probs
-                ),
+                "predictions": _predictions_from_probabilities(probs),
             }
 
     return result
@@ -526,87 +437,36 @@ def compute_all_metrics(
     probabilities: np.ndarray,
     model_name: str,
 ) -> dict:
-    """
-    Compute a standard set of binary
-    classification metrics.
-
-    Metrics
-    -------
-    accuracy,
-    precision,
-    recall,
-    f1,
-    roc_auc,
-    avg_precision (PR-AUC),
-    mcc,
-    brier_score.
+    """Compute the standard binary-classification metrics.
 
     Args:
-        true_labels:
-            (N,) ground-truth binary labels.
-
-        predicted_labels:
-            (N,) binary predictions (0 or 1).
-
-        probabilities:
-            (N,) positive-class probabilities
-            in [0, 1].
-
-        model_name:
-            Identifier included
-            in the returned dict.
+        true_labels: Ground-truth labels of shape ``(N,)``.
+        predicted_labels: Binary predictions of shape ``(N,)``.
+        probabilities: Positive-class probabilities of shape ``(N,)``.
+        model_name: Human-readable identifier for the model.
 
     Returns:
-        Dict mapping metric names
-        to float values,
-        plus "name".
+        Dictionary containing the model name and all computed metrics.
+
+    Raises:
+        ValueError: If ROC AUC cannot be computed because only one class is
+            present in ``true_labels``.
     """
+    try:
+        roc_auc = roc_auc_score(true_labels, probabilities)
+    except ValueError:
+        roc_auc = float("nan")
 
     return {
         "name": model_name,
-
-        "accuracy": accuracy_score(
-            true_labels,
-            predicted_labels,
-        ),
-
-        "precision": precision_score(
-            true_labels,
-            predicted_labels,
-            zero_division=0,
-        ),
-
-        "recall": recall_score(
-            true_labels,
-            predicted_labels,
-            zero_division=0,
-        ),
-
-        "f1": f1_score(
-            true_labels,
-            predicted_labels,
-            zero_division=0,
-        ),
-
-        "roc_auc": roc_auc_score(
-            true_labels,
-            probabilities,
-        ),
-
-        "avg_precision": average_precision_score(
-            true_labels,
-            probabilities,
-        ),
-
-        "mcc": matthews_corrcoef(
-            true_labels,
-            predicted_labels,
-        ),
-
-        "brier_score": brier_score_loss(
-            true_labels,
-            probabilities,
-        ),
+        "accuracy": accuracy_score(true_labels, predicted_labels),
+        "precision": precision_score(true_labels, predicted_labels, zero_division=0),
+        "recall": recall_score(true_labels, predicted_labels, zero_division=0),
+        "f1": f1_score(true_labels, predicted_labels, zero_division=0),
+        "roc_auc": roc_auc,
+        "avg_precision": average_precision_score(true_labels, probabilities),
+        "mcc": matthews_corrcoef(true_labels, predicted_labels),
+        "brier_score": brier_score_loss(true_labels, probabilities),
     }
 
 
@@ -617,93 +477,47 @@ def compute_per_generator_accuracy(
     model_name: str,
     save_dir: Path,
 ) -> pd.DataFrame:
-    """
-    Compute class-conditional accuracy
-    broken down by generator / source type.
+    """Compute per-generator accuracy and save the result as CSV.
 
-    For each unique value in model_types
-    (e.g. ADM, Glide, Midjourney for AI images;
-    folder names for real images)
-    the function computes:
-
-        - accuracy
-        - recall (AI groups)
-        - specificity (real groups)
-        - sample counts
+    For each unique source / generator in ``model_types``, the function
+    computes accuracy and then reports either recall (for AI-generated groups)
+    or specificity (for pure real-image groups).
 
     Args:
-        true_labels:
-            (N,) ground-truth binary labels.
-
-        predicted_labels:
-            (N,) binary predictions.
-
-        model_types:
-            (N,) string array of
-            generator / source names.
-
-        model_name:
-            Identifier used
-            in the output filename.
-
-        save_dir:
-            Directory where the CSV is written.
+        true_labels: Ground-truth binary labels of shape ``(N,)``.
+        predicted_labels: Binary predictions of shape ``(N,)``.
+        model_types: String array of source / generator labels of shape ``(N,)``.
+        model_name: Human-readable model identifier used in the output filename.
+        save_dir: Directory where the CSV file will be written.
 
     Returns:
-        DataFrame with one row per generator type,
-        sorted by accuracy ascending.
-    """
+        DataFrame sorted by ascending accuracy, with one row per generator.
 
+    Raises:
+        OSError: If the CSV cannot be written to ``save_dir``.
+    """
     rows: list[dict] = []
 
-    for generator_name in sorted(
-        np.unique(model_types)
-    ):
-
+    for generator_name in sorted(np.unique(model_types)):
         mask = model_types == generator_name
 
         group_true = true_labels[mask]
         group_pred = predicted_labels[mask]
 
         n_samples = int(mask.sum())
+        n_correct = int((group_true == group_pred).sum())
 
-        n_correct = int(
-            (group_true == group_pred).sum()
-        )
-
-        group_accuracy = (
-            n_correct / n_samples
-            if n_samples > 0
-            else 0.0
-        )
+        group_accuracy = n_correct / n_samples if n_samples > 0 else 0.0
 
         if group_true.sum() == 0:
-
-            # Pure real-image group:
-            # recall undefined,
-            # report specificity.
-
+            # Pure real-image group: recall is not meaningful.
             group_recall = float("nan")
-
-            group_specificity = (
-                float((group_pred == 0).sum())
-                / n_samples
-            )
-
+            group_specificity = float((group_pred == 0).sum()) / n_samples
         else:
-
-            # AI-generated group (or mixed):
-            # report recall,
-            # specificity undefined.
-
+            # AI-generated or mixed group: specificity is not the intended summary.
             group_recall = float(
-                recall_score(
-                    group_true,
-                    group_pred,
-                    zero_division=0,
-                )
+                recall_score(group_true, group_pred, zero_division=0)
             )
-
             group_specificity = float("nan")
 
         rows.append(
@@ -719,28 +533,14 @@ def compute_per_generator_accuracy(
 
     results_df = (
         pd.DataFrame(rows)
-        .sort_values(
-            "accuracy",
-            ascending=True,
-        )
+        .sort_values("accuracy", ascending=True)
         .reset_index(drop=True)
     )
 
-    safe_name = (
-        model_name
-        .replace(" ", "")
-        .lower()
-    )
+    safe_name = model_name.replace(" ", "").lower()
+    csv_path = save_dir / f"per_generator{safe_name}.csv"
 
-    csv_path = (
-        save_dir
-        / f"per_generator{safe_name}.csv"
-    )
-
-    results_df.to_csv(
-        csv_path,
-        index=False,
-    )
+    results_df.to_csv(csv_path, index=False)
 
     return results_df
 
@@ -751,13 +551,12 @@ def compute_per_generator_accuracy(
 
 
 def save_and_close(path: Path) -> None:
-    """
-    Save the current matplotlib figure
-    and close it.
-    """
+    """Save the current Matplotlib figure and close it.
 
+    Args:
+        path: Destination file path for the current figure.
+    """
     plt.savefig(path, dpi=150)
-
     plt.close()
 
 
@@ -767,34 +566,17 @@ def plot_confusion_matrix(
     name: str,
     save_dir: Path,
 ) -> None:
-    """
-    Save a row-normalised confusion matrix
-    for one model.
+    """Save a row-normalized confusion matrix for one model.
 
     Args:
-        true_labels:
-            (N,) ground-truth binary labels.
-
-        predicted_labels:
-            (N,) binary predictions.
-
-        name:
-            Model identifier used
-            in the title and filename.
-
-        save_dir:
-            Output directory.
+        true_labels: Ground-truth binary labels of shape ``(N,)``.
+        predicted_labels: Binary predictions of shape ``(N,)``.
+        name: Model label used in the title and filename.
+        save_dir: Output directory.
     """
+    cm = confusion_matrix(true_labels, predicted_labels, normalize="true")
 
-    cm = confusion_matrix(
-        true_labels,
-        predicted_labels,
-        normalize="true",
-    )
-
-    fig, ax = plt.subplots(
-        figsize=(6, 5)
-    )
+    fig, ax = plt.subplots(figsize=(6, 5))
 
     ConfusionMatrixDisplay(
         confusion_matrix=cm,
@@ -805,41 +587,25 @@ def plot_confusion_matrix(
         values_format=".2f",
     )
 
-    ax.set_title(
-        f"Confusion Matrix — {name}"
-    )
-
+    ax.set_title(f"Confusion Matrix — {name}")
     plt.tight_layout()
 
-    save_and_close(
-        save_dir
-        / f"cm{name.replace(' ', '').lower()}.png"
-
-)
+    save_and_close(save_dir / f"cm{name.replace(' ', '').lower()}.png")
 
 
 def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
     """Save overlaid ROC curves for all models.
 
     Args:
-        curve_data: Dict mapping model names to dicts with keys
-            true_labels, probabilities, and roc_auc.
+        curve_data: Dictionary mapping model names to dictionaries with keys
+            ``true_labels``, ``probabilities``, and ``roc_auc``.
         save_dir: Output directory.
     """
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for name, d in curve_data.items():
-        fpr, tpr, _ = roc_curve(
-            d["true_labels"],
-            d["probabilities"],
-        )
-
-        ax.plot(
-            fpr,
-            tpr,
-            lw=2,
-            label=f"{name} (AUC={d['roc_auc']:.3f})",
-        )
+        fpr, tpr, _ = roc_curve(d["true_labels"], d["probabilities"])
+        ax.plot(fpr, tpr, lw=2, label=f"{name} (AUC={d['roc_auc']:.3f})")
 
     ax.plot([0, 1], [0, 1], "k--", lw=1, label="Random")
     ax.set_xlabel("False Positive Rate")
@@ -853,27 +619,18 @@ def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
 
 
 def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
-    """Save overlaid Precision-Recall curves for all models.
+    """Save overlaid precision-recall curves for all models.
 
     Args:
-        curve_data: Dict mapping model names to dicts with keys
-            true_labels, probabilities, and avg_precision.
+        curve_data: Dictionary mapping model names to dictionaries with keys
+            ``true_labels``, ``probabilities``, and ``avg_precision``.
         save_dir: Output directory.
     """
     fig, ax = plt.subplots(figsize=(8, 6))
 
     for name, d in curve_data.items():
-        prec, rec, _ = precision_recall_curve(
-            d["true_labels"],
-            d["probabilities"],
-        )
-
-        ax.plot(
-            rec,
-            prec,
-            lw=2,
-            label=f"{name} (AP={d['avg_precision']:.3f})",
-        )
+        prec, rec, _ = precision_recall_curve(d["true_labels"], d["probabilities"])
+        ax.plot(rec, prec, lw=2, label=f"{name} (AP={d['avg_precision']:.3f})")
 
     ax.set_xlabel("Recall")
     ax.set_ylabel("Precision")
@@ -891,7 +648,8 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     """Save a grouped bar chart comparing all models across all metrics.
 
     Args:
-        all_metrics: List of metric dicts (each from compute_all_metrics).
+        all_metrics: List of metric dictionaries returned by
+            ``compute_all_metrics``.
         save_dir: Output directory.
     """
     metric_keys = [
@@ -925,17 +683,9 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     for model_idx, metrics in enumerate(all_metrics):
         values = [metrics[k] for k in metric_keys]
 
-        offsets = (
-            x_positions
-            + (model_idx - n_models / 2 + 0.5) * bar_width
-        )
+        offsets = x_positions + (model_idx - n_models / 2 + 0.5) * bar_width
 
-        bars = ax.bar(
-            offsets,
-            values,
-            bar_width,
-            label=metrics["name"],
-        )
+        bars = ax.bar(offsets, values, bar_width, label=metrics["name"])
 
         for bar, value in zip(bars, values):
             ax.text(
@@ -963,7 +713,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
     """Save a heatmap of all metrics for each individual branch.
 
     Args:
-        branch_metrics: Dict mapping branch names to metric dicts.
+        branch_metrics: Dictionary mapping branch names to metric dictionaries.
         save_dir: Output directory.
     """
     metric_keys = [
@@ -1012,14 +762,12 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
     ax.set_yticklabels([b.upper() for b in branch_names])
 
     ax.set_title("Branch Performance Heatmap")
-
     plt.colorbar(image, ax=ax, fraction=0.03)
 
     for row_idx in range(len(branch_names)):
         for col_idx in range(len(metric_keys)):
             cell_value = data[row_idx, col_idx]
             text_color = "white" if cell_value > 0.7 else "black"
-
             ax.text(
                 col_idx,
                 row_idx,
@@ -1039,27 +787,20 @@ def plot_branch_vs_fusion(
     branch_metrics: dict,
     save_dir: Path,
 ) -> None:
-    """Save a grouped bar chart comparing branch accuracy/F1 against the fusion head.
+    """Save a grouped bar chart comparing branch metrics against fusion.
 
-    The fusion bars are highlighted with a red border to distinguish them
-    from the individual branch bars.
+    The fusion bars are highlighted with a red border to distinguish them from
+    the individual branches.
 
     Args:
-        fusion_metrics: Metric dict for the fusion head.
-        branch_metrics: Dict mapping branch names to metric dicts.
+        fusion_metrics: Metric dictionary for the fusion head.
+        branch_metrics: Dictionary mapping branch names to metric dictionaries.
         save_dir: Output directory.
     """
     names = [name.upper() for name in branch_metrics]
 
-    accuracies = [
-        m["accuracy"]
-        for m in branch_metrics.values()
-    ]
-
-    f1_scores = [
-        m["f1"]
-        for m in branch_metrics.values()
-    ]
+    accuracies = [m["accuracy"] for m in branch_metrics.values()]
+    f1_scores = [m["f1"] for m in branch_metrics.values()]
 
     names.append("FUSION")
     accuracies.append(fusion_metrics["accuracy"])
@@ -1118,13 +859,12 @@ def plot_per_generator_accuracy(
 ) -> None:
     """Save a horizontal bar chart of per-generator accuracy.
 
-    Bars for real-image sources are coloured blue; AI-generator bars are
-    coloured orange. Generators are displayed in the order they appear in
-    generator_df (sorted ascending by accuracy by the time it arrives here).
+    Bars for real-image sources are colored blue; AI-generator bars are colored
+    orange. The rows are assumed to arrive already sorted by accuracy.
 
     Args:
-        generator_df: DataFrame produced by compute_per_generator_accuracy.
-        model_name: Identifier used in the plot title and filename.
+        generator_df: DataFrame produced by ``compute_per_generator_accuracy``.
+        model_name: Model label used in the title and filename.
         save_dir: Output directory.
     """
     generator_names = generator_df["generator"].values
@@ -1136,9 +876,7 @@ def plot_per_generator_accuracy(
         for _, row in generator_df.iterrows()
     ]
 
-    fig, ax = plt.subplots(
-        figsize=(10, max(4, len(generator_df) * 0.5))
-    )
+    fig, ax = plt.subplots(figsize=(10, max(4, len(generator_df) * 0.5)))
 
     bars = ax.barh(
         y_positions,
@@ -1161,22 +899,13 @@ def plot_per_generator_accuracy(
     ax.set_xlabel("Accuracy")
     ax.set_xlim(0, 1.12)
 
-    ax.set_title(
-        f"Per-Generator Accuracy — {model_name}"
-    )
-
+    ax.set_title(f"Per-Generator Accuracy — {model_name}")
     ax.grid(axis="x", alpha=0.3)
 
     ax.legend(
         handles=[
-            Patch(
-                facecolor="#4C72B0",
-                label="Real sources",
-            ),
-            Patch(
-                facecolor="#DD8452",
-                label="AI generators",
-            ),
+            Patch(facecolor="#4C72B0", label="Real sources"),
+            Patch(facecolor="#DD8452", label="AI generators"),
         ],
         loc="lower right",
         fontsize=8,
@@ -1185,10 +914,7 @@ def plot_per_generator_accuracy(
     plt.tight_layout()
 
     safe_name = model_name.replace(" ", "").lower()
-
-    save_and_close(
-        save_dir / f"per_generator{safe_name}.png"
-    )
+    save_and_close(save_dir / f"per_generator{safe_name}.png")
 
 
 # ---------------------------------------------------------------------------
@@ -1202,7 +928,14 @@ def _print_summary(
     baseline_m: dict,
     branch_m: dict,
 ) -> None:
-    """Print the final results table and delta comparison to stdout."""
+    """Print the final results table and comparison summary to stdout.
+
+    Args:
+        all_metrics: List of metric dictionaries to print in table form.
+        fusion_m: Metric dictionary for the fusion head.
+        baseline_m: Metric dictionary for the raw-pixel baseline.
+        branch_m: Dictionary mapping branch names to metric dictionaries.
+    """
     header = (
         f"{'Model':<25s} {'Acc':>7s} {'Prec':>7s} {'Rec':>7s}"
         f" {'F1':>7s} {'AUC':>7s} {'AP':>7s} {'MCC':>7s} {'Brier':>7s}"
@@ -1241,33 +974,35 @@ def _print_summary(
     )
 
     if branch_m:
-        best_branch, best_metrics = max(
-            branch_m.items(),
-            key=lambda x: x[1]["f1"],
-        )
+        best_branch, best_metrics = max(branch_m.items(), key=lambda x: x[1]["f1"])
 
         print(
-            f"Best branch: "
-            f"{best_branch.upper()} "
+            f"Best branch: {best_branch.upper()} "
             f"F1={best_metrics['f1']:.4f}"
         )
 
-        if all(
-            fusion_m["f1"] >= bm["f1"]
-            for bm in branch_m.values()
-        ):
+        if all(fusion_m["f1"] >= bm["f1"] for bm in branch_m.values()):
             print("Fusion outperforms all individual branches.")
         else:
             print("Fusion does NOT outperform all individual branches.")
 
 
 def main() -> None:
-    """Run the full evaluation pipeline."""
+    """Run the full evaluation pipeline.
+
+    The pipeline performs four main steps:
+        1. Load cached multi-view test features.
+        2. Build the raw-pixel baseline dataset.
+        3. Run inference for the multi-view model and train/evaluate the baseline.
+        4. Compute metrics, generate plots, and print a summary table.
+
+    Raises:
+        FileNotFoundError: If the cached test features file or model checkpoint
+            is missing.
+    """
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-
-    # ── 1. Cached test features (multi-view model) ─────────────────────────
-
+    # 1. Cached test features (multi-view model)
     if not TEST_CACHE_PATH.exists():
         raise FileNotFoundError(
             f"Test cache not found: {TEST_CACHE_PATH}. "
@@ -1288,9 +1023,7 @@ def main() -> None:
         num_workers=NUM_WORKERS,
     )
 
-
-    # ── 2. Raw pixel dataset (baseline CNN) ────────────────────────────────
-
+    # 2. Raw pixel dataset (baseline CNN)
     raw_test_data = RawPixelDataset(
         parquet_file=PARQUET_FILE,
         split="test",
@@ -1310,21 +1043,17 @@ def main() -> None:
         num_workers=NUM_WORKERS,
     )
 
-
-    # ── 3. Load MultiViewNet ───────────────────────────────────────────────
-
+    # 3. Load MultiViewNet
     mvl_model = MultiViewNet(MODEL_CONFIGURATION).to(DEVICE)
 
     mvl_model.load_state_dict(
-            torch.load(
-                BEST_MODEL_PATH,
-                map_location=DEVICE,
-            )
+        torch.load(
+            BEST_MODEL_PATH,
+            map_location=DEVICE,
         )
+    )
 
-
-    # ── 4. Multi-view inference ────────────────────────────────────────────
-
+    # 4. Multi-view inference
     t0 = time.time()
 
     mvl_results = collect_multiview_predictions(
@@ -1332,12 +1061,9 @@ def main() -> None:
         test_loader,
     )
 
-
     true_labels = mvl_results["true_labels"]
 
-    # ── 5. Baseline training and inference ────────────────────────────────
-
-
+    # 5. Baseline training and inference
     baseline_preds = train_and_predict_baseline(
         baseline_train_loader,
         baseline_eval_loader,
@@ -1345,8 +1071,7 @@ def main() -> None:
 
     baseline_labels = baseline_preds["labels"]
 
-    # ── 6. Metrics ────────────────────────────────────────────────────────
-
+    # 6. Metrics
     all_metrics: list[dict] = []
 
     fusion_m = compute_all_metrics(
@@ -1355,7 +1080,6 @@ def main() -> None:
         mvl_results["fusion"]["probabilities"],
         "MVL Fusion",
     )
-
     all_metrics.append(fusion_m)
 
     branch_m: dict[str, dict] = {}
@@ -1367,7 +1091,6 @@ def main() -> None:
             branch_data["probabilities"],
             f"Branch {branch_name.upper()}",
         )
-
         branch_m[branch_name] = branch_metrics
         all_metrics.append(branch_metrics)
 
@@ -1377,18 +1100,12 @@ def main() -> None:
         baseline_preds["probabilities"],
         "Baseline CNN",
     )
-
     all_metrics.append(baseline_m)
 
-    # ── 6d. Per-generator breakdown ────────────────────────────────────────
-
+    # 6d. Per-generator breakdown
     full_df = pd.read_parquet(PARQUET_FILE)
 
-    test_df = (
-        full_df[full_df["split"] == "test"]
-        .reset_index(drop=True)
-    )
-
+    test_df = full_df[full_df["split"] == "test"].reset_index(drop=True)
     model_types = test_df["model_type"].values
 
     fusion_gen_df = compute_per_generator_accuracy(
@@ -1407,8 +1124,7 @@ def main() -> None:
         RESULTS_DIR,
     )
 
-    # ── 7. Plots ───────────────────────────────────────────────────────────
-
+    # 7. Plots
     plot_confusion_matrix(
         true_labels,
         mvl_results["fusion"]["predictions"],
@@ -1472,8 +1188,7 @@ def main() -> None:
         RESULTS_DIR,
     )
 
-    # ── 8. Summary ─────────────────────────────────────────────────────────
-
+    # 8. Summary
     _print_summary(
         all_metrics,
         fusion_m,
