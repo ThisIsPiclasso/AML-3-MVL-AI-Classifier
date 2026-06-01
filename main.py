@@ -109,7 +109,7 @@ async def inf(file: UploadFile = File(None)):
             detail="Could not decode image files. File may be corrupted.",
         )
 
-    # Checking if the image is passing minimum size requirements
+    # check if the image is passing minimum size requirements
     width, height = img.size
     if width < PATCH_SIZE or height < PATCH_SIZE:
         raise HTTPException(
@@ -150,6 +150,14 @@ async def inf(file: UploadFile = File(None)):
 
 
 def extract_patch(image: Image.Image, patch_size=PATCH_SIZE) -> Image.Image:
+    """
+    Extracts a central patch from the input image.
+    Args:
+        image (PIL.Image.Image): The input image.
+        patch_size (int): The size of the patch to extract.
+    Returns:
+        PIL.Image.Image: The extracted patch.
+    """
     width, height = image.size
     left = (width - patch_size) // 2
     top = (height - patch_size) // 2
@@ -160,6 +168,11 @@ def extract_patch(image: Image.Image, patch_size=PATCH_SIZE) -> Image.Image:
 
 
 def convert_image(image: Image.Image):
+    """Converts the input image to JPEG format if it is not already in that format, while preserving visual fidelity as much as possible.
+    This function also handles images with transparency by compositing them onto a white background before conversion.
+    Args:        image (PIL.Image.Image): The input image to be converted.
+    Returns:        PIL.Image.Image: The converted image in JPEG format.
+    """
     if image.format == "JPEG":
         return image
 
