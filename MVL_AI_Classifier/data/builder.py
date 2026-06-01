@@ -132,7 +132,7 @@ class DatasetBuilder:
 
     def split(
         self,
-        train_size: float = DEFAULT_TEST_SPLIT,
+        train_size: float = DEFAULT_TRAIN_SPLIT,
         val_size: float = DEFAULT_VAL_SPLIT,
         test_size: float = DEFAULT_TEST_SPLIT,
     ) -> None:

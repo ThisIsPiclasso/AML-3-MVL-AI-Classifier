@@ -5,7 +5,7 @@ from h5py import Dataset
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from ..constants import MODEL_CONFIGURATION
+from .MVL_AI_Classifier.constants import MODEL_CONFIGURATION
 
 # Resolve paths to ensure imports from your project directory work flawlessly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -55,33 +55,26 @@ def compile_split_cache(
     # ─── RESUME DETECTION LOGIC ──────────────────────────────────────────────
     if os.path.exists(save_path):
         try:
-            # Open strictly in read-only first to evaluate if we can salvage past work
             with h5py.File(save_path, "r") as f_check:
                 if "aps" in f_check:
-                    print(
-                        "🔍 Existing cache file detected. Inspecting contents for progress..."
-                    )
+                    print("adding to existing cache file")
 
-                    # Pull a lightweight map of the aps block to see where real data stops
                     aps_dataset = f_check["aps"]
 
-                    # Read in chunks to avoid blowing up memory during the check
                     chunk_size = 50000
                     total_allocated = aps_dataset.shape[0]
                     last_written_row = -1
 
-                    print("🎚️ Scanning array matrix blocks...")
+                    print("scanning blocks")
                     for i in range(0, total_allocated, chunk_size):
                         end_chunk = min(i + chunk_size, total_allocated)
                         chunk_data = aps_dataset[i:end_chunk]
 
-                        # Find non-zero indices within this slice
                         nonzero_in_chunk = np.any(chunk_data != 0, axis=1)
                         if np.any(nonzero_in_chunk):
                             last_written_row = i + np.max(np.where(nonzero_in_chunk)[0])
 
                     if last_written_row != -1:
-                        # Snap progress back to the closest clean batch boundary marker
                         start_idx = (
                             int((last_written_row // BATCH_SIZE) * BATCH_SIZE)
                             + BATCH_SIZE
@@ -91,26 +84,20 @@ def compile_split_cache(
                             file_mode = (
                                 "r+"  # Convert file open settings to append/update mode
                             )
+                            print(f"real data found at row {last_written_row}.")
                             print(
-                                f"📍 Resuming enabled! Found real data up to row {last_written_row}."
-                            )
-                            print(
-                                f"🚀 Progress bar will jump forward to index: {start_idx} ({start_idx/num_samples*100:.2f}%)"
+                                f"skipping to: {start_idx} ({start_idx/num_samples*100:.2f}%)"
                             )
                         else:
                             print(
-                                f"✅ Cache file for {split.upper()} is already 100% complete ({last_written_row+1} rows). Skipping file generation entirely."
+                                f"cache file for {split.upper()} is  complete ({last_written_row+1} rows)"
                             )
                             return
                     else:
-                        print(
-                            "⚠️ File exists but contains only zero placeholders. Overwriting fresh."
-                        )
+                        print("file exists but is empty or not initialized properly")
                         file_mode = "w"
         except Exception as e:
-            print(
-                f"⚠️ Existing file analysis failed ({e}). Re-initializing layout from scratch."
-            )
+            print(f"file analysis failed ({e})")
             file_mode = "w"
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -129,7 +116,7 @@ def compile_split_cache(
         label_storage: Dataset
 
         if file_mode == "w":
-            print("📦 Allocating pristine binary shells inside HDF5...")
+            print("allocating space for new cache file")
             for view_name in active_view_keys:
                 feature_shape = first_sample["views"][view_name].shape
                 full_shape = (num_samples,) + feature_shape
@@ -143,7 +130,7 @@ def compile_split_cache(
             )
         else:
             print(
-                "🔗 Linking runtime descriptors back to current file layout indices..."
+                "opening existing cache file in update mode and mapping datasets for writing"
             )
             for view_name in active_view_keys:
                 dataset_storage[view_name] = f[view_name]  # type: ignore
@@ -164,8 +151,6 @@ def compile_split_cache(
             views_dict = batch["views"]
             label_tensor = batch["label"]
 
-            # ─── RUNTIME SAFETY EMBEDDING ────────────────────────────────────
-            # Prevents corrupted images at index 700,000+ from crashing your run
             try:
                 for view_name in active_view_keys:
                     dataset_storage[view_name][current_idx:end_idx] = views_dict[
@@ -174,18 +159,15 @@ def compile_split_cache(
                 label_storage[current_idx:end_idx] = label_tensor.numpy()
             except Exception as e:
                 print(
-                    f"\n❌ Catch block tripped! Skipped corrupted input range [{current_idx}:{end_idx}]. Exception: {e}"
+                    f"\nskipped corrupted input range [{current_idx}:{end_idx}]. exception: {e}"
                 )
-            # ─────────────────────────────────────────────────────────────────
 
             current_idx = end_idx
 
 
 if __name__ == "__main__":
-    # Ensure our save folder path exists
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-    # 1. Compile the main Training split file (Will automatically trigger resume calculation)
     train_save_path = os.path.join(CACHE_DIR, "train_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
@@ -194,7 +176,6 @@ if __name__ == "__main__":
         save_path=train_save_path,
     )
 
-    # 2. Compile the Validation split file
     val_save_path = os.path.join(CACHE_DIR, "val_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
@@ -203,7 +184,6 @@ if __name__ == "__main__":
         save_path=val_save_path,
     )
 
-    # 3. Compile the Test split file
     test_save_path = os.path.join(CACHE_DIR, "test_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
@@ -212,6 +192,4 @@ if __name__ == "__main__":
         save_path=test_save_path,
     )
 
-    print(
-        "\n🎉 [ALL SPLITS COMPLETE] Your optimized master cache files are baked and ready!"
-    )
+    print("caching complete")
