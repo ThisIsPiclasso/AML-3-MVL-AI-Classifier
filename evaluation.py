@@ -166,7 +166,7 @@ class RawPixelDataset(DataClass):
 
         Returns:
             A dictionary with:
-                - ``"image"``: Float32 tensor of shape ``(3, H, W)`` in ``[0, 1]``.
+                - ``"image"``: Tensor of shape ``(3, H, W)`` in ``[0, 1]``.
                 - ``"label"``: Long tensor containing the binary class label.
         """
         item = self.df.iloc[idx]
