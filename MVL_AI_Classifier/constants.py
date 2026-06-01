@@ -46,9 +46,15 @@ DEFAULT_TEST_SPLIT = 0.1
 
 # Defaults for training
 PARQUET_FILE = "./data/data_parquet/dataset.parquet"
-BATCH_SIZE = 64
 NUM_WORKERS = 2
 NUM_EPOCHS = 15
+
+# hyperparameters for multi-view loss
+DEFAULT_ALPHA = 0.1
+DEFAULT_BETA = 0.20749566933161628
+DEFAULT_TEMPERATURE = 3.5
+DEFAULT_LEARNING_RATE = 0.00023462467904408212
+BATCH_SIZE = 64
 
 # Defaults for Optuna hyperparameter tuning
 N_TRIALS = 100

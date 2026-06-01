@@ -11,7 +11,12 @@ It sums:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from MVL_AI_Classifier.constants import DEFAULT_EPSILON
+from MVL_AI_Classifier.constants import (
+    DEFAULT_EPSILON,
+    DEFAULT_ALPHA,
+    DEFAULT_BETA,
+    DEFAULT_TEMPERATURE,
+)
 
 
 class DistillationLoss(nn.Module):
@@ -74,7 +79,12 @@ class MultiViewLoss(nn.Module):
     - Branches are encouraged to align via distillation
     """
 
-    def __init__(self, alpha: float = 0.3, beta: float = 0.1, temperature: float = 2.0):
+    def __init__(
+        self,
+        alpha: float = DEFAULT_ALPHA,
+        beta: float = DEFAULT_BETA,
+        temperature: float = DEFAULT_TEMPERATURE,
+    ):
         """
         Args:
             alpha (float): Weight for branch classification loss.
