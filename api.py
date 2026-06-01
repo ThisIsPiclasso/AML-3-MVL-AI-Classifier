@@ -8,7 +8,7 @@ from MVL_AI_Classifier.constants import PATCH_SIZE
 
 app = FastAPI(
     title="Multi-view AI Detection API",
-    descritpion="""
+    description="""
     This enterprise-grade REST API hosts a **4-branch forensic neural network** optimized to detect synthetic, AI-generated, or structurally manipulated digital media.
     
     ### Core Capabilities

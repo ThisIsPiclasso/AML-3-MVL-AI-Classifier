@@ -65,10 +65,6 @@ class CachedDataClass(Dataset):
                     current_offset += read_len
                     pbar.update(read_len)  # Bump progress display bar forward
 
-        print(
-            "✅ System RAM allocation finalized. Binary HDF5 file handle safely unlinked.\n"
-        )
-
     def __len__(self) -> int:
         return self.dataset_length
 
