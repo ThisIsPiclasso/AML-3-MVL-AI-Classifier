@@ -20,6 +20,13 @@ DEFAULT_EPSILON = 1e-8
 DEFAULT_N_BINS = 64
 
 DEFAULT_N_LEVELS = 32
+# dct default parameters
+DEFAULT_LOG_COMPRESS_DISPERSION = True  # log compression for MAD statistic
+DEFAULT_SPARSITY_THRESHOLD = 0.10  # sparsity threshold for dct statistic
+
+# noise residuals default parameters
+DEFAULT_SIGMA = 1.0  # sigma value for gaussian filter
+DEFAULT_WINDOW_SIZE = 16
 
 # Data frame constants
 DEFAULT_AI_PATH = "./data/subset/ai"
