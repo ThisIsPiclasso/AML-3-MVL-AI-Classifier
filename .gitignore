@@ -10,8 +10,8 @@ data/subset.zip
 data/cache.zip
 runs/
 data/data_cache
-trained_model.pt
-best_multiview_model.pt
+models/trained_model.pt
+
 data/data_parquet
 optuna_tuning.db
 checkpoints/
