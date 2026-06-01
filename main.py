@@ -52,8 +52,8 @@ class Config:
 request_history = {}
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = MultiViewNet(view_configuration=MODEL_CONFIGURATION, embed_dim=512).to(device)
-weights_checkpoint = "checkpoints/multiview_model_epoch_11.pt"
-model.load_state_dict(torch.load(weights_checkpoint, map_location=device))
+trained_model = "trained_model.pt"
+model.load_state_dict(torch.load(trained_model, map_location=device))
 model.eval()
 
 
