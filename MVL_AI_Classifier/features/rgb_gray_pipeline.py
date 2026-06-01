@@ -21,10 +21,10 @@ class RGBGrayscalePreprocessor(BasePreprocessor):
         """Convert an RGB image to grayscale via luminance projection.
 
         Args:
-            image: Float32 RGB image of shape ``(H, W, 3)``.
+            image_patch: Float32 RGB image of shape ``(H, W, 3)``.
 
         Raises:
-            ValueError: If ``image`` is not 3-dimensional or does not
+            ValueError: If ``image_patch`` is not 3-dimensional or does not
                 have exactly 3 channels along the last axis.
 
         Returns:
