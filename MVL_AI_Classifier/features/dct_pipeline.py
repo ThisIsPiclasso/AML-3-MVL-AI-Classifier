@@ -4,6 +4,8 @@ from scipy.fftpack import dctn
 from features.base_processor import BasePreprocessor
 from MVL_AI_Classifier.constants import (
     DEFAULT_EPSILON,
+    DEFAULT_LOG_COMPRESS_DISPERSION,
+    DEFAULT_SPARSITY_THRESHOLD,
     JPEG_BLOCK_SIZE,
     JPEG_BLOCKS_PER_DIM,
     JPEG_RECENTER_VALUE,
@@ -26,8 +28,8 @@ class DCTDistributionPreprocessor(BasePreprocessor):
     def __init__(
         self,
         epsilon: float = DEFAULT_EPSILON,
-        sparsity_threshold: float = 0.10,
-        log_compress_dispersion: bool = True,
+        sparsity_threshold: float = DEFAULT_SPARSITY_THRESHOLD,
+        log_compress_dispersion: bool = DEFAULT_LOG_COMPRESS_DISPERSION,
     ):
         """Initialize the DCT distribution preprocessor.
 
