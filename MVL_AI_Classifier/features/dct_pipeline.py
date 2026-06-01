@@ -1,16 +1,19 @@
 import numpy as np
 from scipy.fftpack import dctn
 
-from features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 from MVL_AI_Classifier.constants import (
     DEFAULT_EPSILON,
     JPEG_BLOCK_SIZE,
     JPEG_BLOCKS_PER_DIM,
     JPEG_RECENTER_VALUE,
 )
-from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
+from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
+    RGBNormalizationPreprocessor,
+)
 
-class DCTDistributionPreprocessor(BasePreprocessor):
+
+class DiscreteCosineTransformPreprocessor(BasePreprocessor):
     """Compute per-channel distributional statistics of block DCT coefficients.
 
     The image is partitioned into 1024 non-overlapping 8x8 blocks (the
@@ -63,8 +66,8 @@ class DCTDistributionPreprocessor(BasePreprocessor):
             C-contiguous float32 array of shape
             ``(3, num_blocks, 8, 8)`` where ``num_blocks = 1024``.
         """
-        num_blocks_per_dim = JPEG_BLOCKS_PER_DIM   # 32
-        block_size = JPEG_BLOCK_SIZE                # 8
+        num_blocks_per_dim = JPEG_BLOCKS_PER_DIM  # 32
+        block_size = JPEG_BLOCK_SIZE  # 8
 
         blocks = (
             image
@@ -72,8 +75,10 @@ class DCTDistributionPreprocessor(BasePreprocessor):
             # (256, 256, 3) → (32, 8, 32, 8, 3)
             # Axes: (block_row, pixel_row, block_col, pixel_col, channel)
             .reshape(
-                num_blocks_per_dim, block_size,
-                num_blocks_per_dim, block_size,
+                num_blocks_per_dim,
+                block_size,
+                num_blocks_per_dim,
+                block_size,
                 3,
             )
             # Rearrange to channel-first, then block-grid, then block-pixels:
@@ -123,8 +128,8 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         # Second and fourth central moments, computed in float64 to
         # preserve precision during the kurtosis subtraction.
         # m2 = E[d²] (variance), m4 = E[d⁴] (fourth central moment)
-        second_moment = (deviations ** 2).mean(axis=1).astype(np.float64)
-        fourth_moment = (deviations ** 4).mean(axis=1).astype(np.float64)
+        second_moment = (deviations**2).mean(axis=1).astype(np.float64)
+        fourth_moment = (deviations**4).mean(axis=1).astype(np.float64)
         # Shape: (3, 8, 8) each, float64
 
         # Biased excess kurtosis: g2 = m4/m2² - 3
@@ -132,16 +137,15 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         # Positions with near-zero variance get kurtosis = 0 (undefined).
         biased_excess_kurtosis = np.where(
             second_moment > self.epsilon,
-            fourth_moment / (second_moment ** 2 + self.epsilon) - 3.0,
+            fourth_moment / (second_moment**2 + self.epsilon) - 3.0,
             0.0,
         )
         # Shape: (3, 8, 8), float64
 
         # Bias correction: convert biased g2 to unbiased G2.
         # Formula: G2 = (n-1)/((n-2)(n-3)) × ((n+1)×g2 + 6)
-        bias_correction_factor = (
-            (num_blocks - 1)
-            / ((num_blocks - 2) * (num_blocks - 3))
+        bias_correction_factor = (num_blocks - 1) / (
+            (num_blocks - 2) * (num_blocks - 3)
         )
         unbiased_kurtosis = bias_correction_factor * (
             (num_blocks + 1) * biased_excess_kurtosis + 6.0
@@ -172,7 +176,7 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         """
         image = self._normalization(image_patch)
 
-        # Maps [0, 255] → [-128, 127]. 
+        # Maps [0, 255] → [-128, 127].
         image_centered = image - np.float32(JPEG_RECENTER_VALUE)
 
         blocks = self._extract_blocks(image_centered)
@@ -185,7 +189,7 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         dct_coefficients = np.asarray(
             dctn(blocks, axes=(-2, -1), norm="ortho"),
             dtype=np.float32,
-        ) # Shape: (3, 1024, 8, 8), float32
+        )  # Shape: (3, 1024, 8, 8), float32
 
         # The DC at (0,0) encodes each block's mean brightness.
         # Subtracting it removes the redundancy with APS while preserving
@@ -206,9 +210,7 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         # More robust to outlier blocks (containing sharp edges) than
         # standard deviation. Captures how "spread out" the coefficient
         # values are at each frequency position.
-        median_per_position = np.median(
-            dct_coefficients, axis=1, keepdims=True
-        )
+        median_per_position = np.median(dct_coefficients, axis=1, keepdims=True)
         # Shape: (3, 1, 8, 8)
         robust_dispersion = np.median(
             np.abs(dct_coefficients - median_per_position), axis=1
@@ -223,21 +225,20 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         # RMS (Root Mean Square) = typical coefficient magnitude per channel.
         # Used as reference scale: "near zero" means below 10% of this RMS.
         channel_rms = np.sqrt(
-            (dct_coefficients ** 2).mean(axis=(1, 2, 3), keepdims=True)
-            + self.epsilon
+            (dct_coefficients**2).mean(axis=(1, 2, 3), keepdims=True) + self.epsilon
         )
         # Shape: (3, 1, 1, 1) — one scalar per channel, broadcastable.
 
         # Fraction of blocks where |coefficient| < threshold at each position.
         sparsity_threshold = self.sparsity_threshold * channel_rms
         sparsity = (
-            absolute_coefficients < sparsity_threshold
-        ).mean(axis=1).astype(np.float32)
+            (absolute_coefficients < sparsity_threshold).mean(axis=1).astype(np.float32)
+        )
         # Shape: (3, 8, 8)
 
         # --- Statistic D: Sign asymmetry. ---
         # (fraction positive) - (fraction negative) across blocks.
-        # Range [-1, 1]. Near 0 = symmetric. 
+        # Range [-1, 1]. Near 0 = symmetric.
         # Note: APS discards sign via |F|², so this captures a completely different signal.
         fraction_positive = (dct_coefficients > 0).mean(axis=1)
         fraction_negative = (dct_coefficients < 0).mean(axis=1)
@@ -254,7 +255,6 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         # features[channel, 2, u, v] = sparsity fraction
         # features[channel, 3, u, v] = sign asymmetry
 
-
         # MAD can have awide dynamic range across the frequency positions
         # Log maps this to a more uniform scale
         # Not applied to other statistics because:
@@ -263,5 +263,5 @@ class DCTDistributionPreprocessor(BasePreprocessor):
         #   - Sign asymmetry is in [-1, 1] (bounded and signed).
         if self.log_compress_dispersion:
             features[:, 0] = np.log(features[:, 0] + self.epsilon)
-
+        features = features.reshape(12, 8, 8)
         return features

@@ -1,8 +1,9 @@
 import numpy as np
 
-from features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 
-class RGBToGrayPreprocessor(BasePreprocessor):
+
+class RGBGrayscalePreprocessor(BasePreprocessor):
     """Convert a float32 RGB image to single-channel grayscale.
 
     Uses the ITU-R BT.601 luminance formula:
@@ -20,10 +21,10 @@ class RGBToGrayPreprocessor(BasePreprocessor):
         """Convert an RGB image to grayscale via luminance projection.
 
         Args:
-            image: Float32 RGB image of shape ``(H, W, 3)``.
+            image_patch: Float32 RGB image of shape ``(H, W, 3)``.
 
         Raises:
-            ValueError: If ``image`` is not 3-dimensional or does not
+            ValueError: If ``image_patch`` is not 3-dimensional or does not
                 have exactly 3 channels along the last axis.
 
         Returns:

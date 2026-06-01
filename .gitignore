@@ -4,4 +4,14 @@ __pycache__/
 .DS_Store
 venv/
 .env
-data/
+data/raw
+data/subset
+data/subset.zip
+data/cache.zip
+runs/
+data/data_cache
+trained_model.pt
+best_multiview_model.pt
+data/data_parquet
+optuna_tuning.db
+checkpoints/

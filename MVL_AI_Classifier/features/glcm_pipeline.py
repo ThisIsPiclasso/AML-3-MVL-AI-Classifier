@@ -1,12 +1,14 @@
 import numpy as np
 
-from features.base_processor import BasePreprocessor
-from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
-from features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
+    RGBNormalizationPreprocessor,
+)
+from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBGrayscalePreprocessor
 from MVL_AI_Classifier.constants import DEFAULT_N_LEVELS
 
 
-class GLCMPreprocessor(BasePreprocessor):
+class GrayLevelCooccurrenceMatrixPreprocessor(BasePreprocessor):
     """Compute normalized Gray-Level Co-occurrence Matrices from an RGB patch.
 
     Four directional spatial offsets are computed:
@@ -38,7 +40,7 @@ class GLCMPreprocessor(BasePreprocessor):
                 Default 32 gives a good balance of sensitivity and robustness
             symmetric: If True, GLCM is symmetrized via ``G = G + G.T``,
                 treating co-occurrence of ``(i, j)`` and ``(j, i)`` as
-                equivalent. 
+                equivalent.
         """
 
         # Maps pixel values [0, 255] → [0, n_levels)
@@ -47,7 +49,7 @@ class GLCMPreprocessor(BasePreprocessor):
         self._scale = np.float32(self.n_levels / 255.0)
 
         self._normalization = RGBNormalizationPreprocessor()
-        self._to_gray = RGBToGrayPreprocessor()
+        self._to_gray = RGBGrayscalePreprocessor()
 
     def _compute_glcm(
         self,
@@ -87,7 +89,6 @@ class GLCMPreprocessor(BasePreprocessor):
         x_ref = slice(max(0, -offset_x), width - max(0, offset_x))
         x_nb = slice(max(0, offset_x), width - max(0, -offset_x))
 
-
         # Extract aligned reference and neighbor pixel arrays.
         # ravel() flattens to 1D
         reference_levels = quantized_image[y_ref, x_ref].ravel()
@@ -97,9 +98,11 @@ class GLCMPreprocessor(BasePreprocessor):
         # G[i, j] = number of times intensity level i appears adjacent
         # to intensity level j at the specified spatial offset.
         co_occurence_matrix = np.zeros((self.n_levels, self.n_levels), dtype=np.float32)
-        
-        #duplicate handling
-        np.add.at(co_occurence_matrix, (reference_levels, neighbor_levels), np.float32(1.0))
+
+        # duplicate handling
+        np.add.at(
+            co_occurence_matrix, (reference_levels, neighbor_levels), np.float32(1.0)
+        )
 
         # Symmetrize: treat (i→j) and (j→i) as equivalent.
         # This doubles all counts and makes G[i,j] = G[j,i].
@@ -128,10 +131,15 @@ class GLCMPreprocessor(BasePreprocessor):
         image = self._normalization(image_patch)
         gray = self._to_gray(image)
         gray_q = np.floor(gray * self._scale).astype(np.int32)
-        gray_q = np.clip(gray_q, 0, self.n_levels - 1) # Clip handles the edge case where value=255 produces bin index 16.
+        gray_q = np.clip(
+            gray_q, 0, self.n_levels - 1
+        )  # Clip handles the edge case where value=255 produces bin index 16.
 
         glcms = np.stack(
-            [self._compute_glcm(gray_q, offset_x, offset_y) for offset_x, offset_y in self._OFFSETS],
+            [
+                self._compute_glcm(gray_q, offset_x, offset_y)
+                for offset_x, offset_y in self._OFFSETS
+            ],
             axis=0,
         )  # (4, n_levels, n_levels), float32
 
