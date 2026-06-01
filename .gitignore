@@ -14,3 +14,4 @@ trained_model.pt
 best_multiview_model.pt
 data/data_parquet
 optuna_tuning.db
+checkpoints/
