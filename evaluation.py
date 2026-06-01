@@ -294,18 +294,15 @@ def _predictions_from_probabilities(probabilities: np.ndarray) -> np.ndarray:
 
 def train_and_predict_baseline(
     train_loader: DataLoader,
-    eval_loader: DataLoader,
+    test_loader: DataLoader,
 ) -> dict:
     """Train the baseline CNN and collect predictions on the evaluation split.
 
-    The pipeline trains and evaluates on the SAME underlying test split
-    as a baseline. The training loader is shuffled; the evaluation
-    loader is not.
 
     Args:
-        train_loader: Shuffled DataLoader yielding dictionaries with keys
+        train_loader:  DataLoader yielding dictionaries with keys
             ``"image"`` and ``"label"``.
-        eval_loader: Unshuffled DataLoader yielding dictionaries with keys
+        test_loader:  DataLoader yielding dictionaries with keys
             ``"image"`` and ``"label"``.
 
     Returns:
@@ -335,7 +332,7 @@ def train_and_predict_baseline(
     all_labels: list[np.ndarray] = []
 
     with torch.no_grad():
-        for batch in eval_loader:
+        for batch in test_loader:
             images = batch["image"].to(DEVICE)
 
             all_probs.append(_probabilities_from_logits(model(images)))
@@ -538,7 +535,7 @@ def compute_per_generator_accuracy(
     )
 
     safe_name = model_name.replace(" ", "").lower()
-    csv_path = save_dir / f"per_generator{safe_name}.csv"
+    csv_path = save_dir / f"per_generator_{safe_name}.csv"
 
     results_df.to_csv(csv_path, index=False)
 
@@ -550,7 +547,7 @@ def compute_per_generator_accuracy(
 # ---------------------------------------------------------------------------
 
 
-def save_and_close(path: Path) -> None:
+def_save_and_close(path: Path) -> None:
     """Save the current Matplotlib figure and close it.
 
     Args:
@@ -590,7 +587,7 @@ def plot_confusion_matrix(
     ax.set_title(f"Confusion Matrix — {name}")
     plt.tight_layout()
 
-    save_and_close(save_dir / f"cm{name.replace(' ', '').lower()}.png")
+   _save_and_close(save_dir / f"cm_{name.replace(' ', '').lower()}.png")
 
 
 def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
@@ -615,7 +612,7 @@ def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    save_and_close(save_dir / "roc_curves.png")
+   _save_and_close(save_dir / "roc_curves.png")
 
 
 def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
@@ -641,7 +638,7 @@ def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
     ax.set_ylim(0, 1.05)
 
     plt.tight_layout()
-    save_and_close(save_dir / "pr_curves.png")
+   _save_and_close(save_dir / "pr_curves.png")
 
 
 def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
@@ -706,7 +703,7 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    save_and_close(save_dir / "metrics_bar.png")
+   _save_and_close(save_dir / "metrics_bar.png")
 
 
 def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
@@ -779,7 +776,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
             )
 
     plt.tight_layout()
-    save_and_close(save_dir / "branch_heatmap.png")
+   _save_and_close(save_dir / "branch_heatmap.png")
 
 
 def plot_branch_vs_fusion(
@@ -849,7 +846,7 @@ def plot_branch_vs_fusion(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-    save_and_close(save_dir / "branch_vs_fusion.png")
+   _save_and_close(save_dir / "branch_vs_fusion.png")
 
 
 def plot_per_generator_accuracy(
@@ -914,7 +911,7 @@ def plot_per_generator_accuracy(
     plt.tight_layout()
 
     safe_name = model_name.replace(" ", "").lower()
-    save_and_close(save_dir / f"per_generator{safe_name}.png")
+   _save_and_close(save_dir / f"per_generator{safe_name}.png")
 
 
 # ---------------------------------------------------------------------------
@@ -1029,14 +1026,19 @@ def main() -> None:
         split="test",
     )
 
+    raw_train_data = RawPixelDataset(
+        parquet_file=PARQUET_FILE,
+        split="train",
+    )
+
     baseline_train_loader = DataLoader(
-        raw_test_data,
+        raw_train_data,
         batch_size=BASELINE_BATCH_SIZE,
-        shuffle=True,
+        shuffle=False,
         num_workers=NUM_WORKERS,
     )
 
-    baseline_eval_loader = DataLoader(
+    baseline_test_loader = DataLoader(
         raw_test_data,
         batch_size=BASELINE_BATCH_SIZE,
         shuffle=False,
@@ -1066,7 +1068,7 @@ def main() -> None:
     # 5. Baseline training and inference
     baseline_preds = train_and_predict_baseline(
         baseline_train_loader,
-        baseline_eval_loader,
+        baseline_test_loader,
     )
 
     baseline_labels = baseline_preds["labels"]
