@@ -8,6 +8,7 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     PATCH_SIZE,
     NUM_EPOCHS,
+    DEFAULT_LEARNING_RATE,
 )
 from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
 from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
@@ -51,7 +52,7 @@ MODEL_CONFIGURATION = {
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
-    writer = SummaryWriter(log_dir="runs/multiview_experiment_1")
+    writer = SummaryWriter(log_dir="runs/multiview_final_training")
 
     data_manager = DataManager(
         view_configuration=MODEL_CONFIGURATION,
@@ -62,7 +63,9 @@ def main():
     val_loader = data_manager.get_val_loader()
     model = MultiViewNet(MODEL_CONFIGURATION).to(device)
     loss_function = MultiViewLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-4, weight_decay=1e-2)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=DEFAULT_LEARNING_RATE, weight_decay=1e-2
+    )
 
     best_val_loss = float("inf")
     print("starting training")
@@ -94,7 +97,9 @@ def main():
         writer.add_scalar("Accuracy/Val", val_acc, epoch)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), "best_multiview_model.pt")
+            torch.save(
+                model.state_dict(), f"checkpoints/multiview_model_epoch_{epoch+1}.pt"
+            )
     writer.close()
     print("training done")
 
@@ -140,6 +145,32 @@ def train_epoch(model, dataloader, optimizer, loss_function, device):
     return running_loss, correct_fusion, total_samples
 
 
+def tune_hyperparameters():
+    import optuna
+
+    tuning_data_manager = DataManager(
+        view_configuration=MODEL_CONFIGURATION,
+        batch_size=BATCH_SIZE,
+        use_cache=True,
+        num_sections=3,
+    )
+    tuning_network = MultiViewNet(MODEL_CONFIGURATION)
+    study = optuna.create_study(
+        study_name="multiview_hyperparameter_sweep",
+        storage="sqlite:///optuna_tuning.db",
+        direction="minimize",
+        load_if_exists=True,
+        pruner=optuna.pruners.MedianPruner(
+            n_startup_trials=3, n_warmup_steps=1, interval_steps=1
+        ),
+    )
+    best_hyperparameters = tuning_network.tune(
+        data_manager=tuning_data_manager, study=study
+    )
+
+    print(f"optimized Parameters: {best_hyperparameters}")
+
+
 def validate(model, dataloader, loss_function, device):
     model.eval()
     # again init trackers
@@ -173,33 +204,5 @@ def validate(model, dataloader, loss_function, device):
 if __name__ == "__main__":
     # The training is commented out for now.
     # After we get the best hyperparameters, we will run the main training.
-    # main()
-    import optuna
-
-    tuning_data_manager = DataManager(
-        view_configuration=MODEL_CONFIGURATION,
-        batch_size=BATCH_SIZE,
-        use_cache=True,
-        num_sections=3,
-    )
-    tuning_network = MultiViewNet(MODEL_CONFIGURATION)
-    study = optuna.create_study(
-        study_name="multiview_hyperparameter_sweep",
-        storage="sqlite:///optuna_tuning.db",
-        direction="minimize",
-        load_if_exists=True,
-        pruner=optuna.pruners.MedianPruner(
-            n_startup_trials=3, n_warmup_steps=1, interval_steps=1
-        ),
-    )
-
-    print("🚀 Triggering 24-Hour Hyperparameter Sweep with SQLite Storage Core...")
-
-    # 4. 🚀 PASS BOTH OBJECTS INTO THE TUNING METHOD
-    best_hyperparameters = tuning_network.tune(
-        data_manager=tuning_data_manager, study=study
-    )
-    # Modify parameters of the tuning function in constants.py
-    best_hyperparameters = tuning_network.tune(tuning_data_manager)
-
-    print(f"Optimized Parameters: {best_hyperparameters}")
+    main()
+    # tune_hyperparameters()
