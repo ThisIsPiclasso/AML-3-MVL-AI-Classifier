@@ -544,7 +544,7 @@ def compute_per_generator_accuracy(
 # ---------------------------------------------------------------------------
 
 
-def_save_and_close(path: Path) -> None:
+def _save_and_close(path: Path) -> None:
     """Save the current Matplotlib figure and close it.
 
     Args:
@@ -570,7 +570,7 @@ def plot_confusion_matrix(
     """
     cm = confusion_matrix(true_labels, predicted_labels, normalize="true")
 
-    fig, ax = plt.subplots(figsize=(6, 5))
+    _, ax = plt.subplots(figsize=(6, 5))
 
     ConfusionMatrixDisplay(
         confusion_matrix=cm,
@@ -584,7 +584,7 @@ def plot_confusion_matrix(
     ax.set_title(f"Confusion Matrix — {name}")
     plt.tight_layout()
 
-   _save_and_close(save_dir / f"cm_{name.replace(' ', '').lower()}.png")
+    _save_and_close(save_dir / f"cm_{name.replace(' ', '').lower()}.png")
 
 
 def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
@@ -595,7 +595,7 @@ def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
             ``true_labels``, ``probabilities``, and ``roc_auc``.
         save_dir: Output directory.
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    _, ax = plt.subplots(figsize=(8, 6))
 
     for name, d in curve_data.items():
         fpr, tpr, _ = roc_curve(d["true_labels"], d["probabilities"])
@@ -609,7 +609,7 @@ def plot_roc_curves(curve_data: dict, save_dir: Path) -> None:
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-   _save_and_close(save_dir / "roc_curves.png")
+    _save_and_close(save_dir / "roc_curves.png")
 
 
 def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
@@ -620,7 +620,7 @@ def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
             ``true_labels``, ``probabilities``, and ``avg_precision``.
         save_dir: Output directory.
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    _, ax = plt.subplots(figsize=(8, 6))
 
     for name, d in curve_data.items():
         prec, rec, _ = precision_recall_curve(d["true_labels"], d["probabilities"])
@@ -635,7 +635,7 @@ def plot_pr_curves(curve_data: dict, save_dir: Path) -> None:
     ax.set_ylim(0, 1.05)
 
     plt.tight_layout()
-   _save_and_close(save_dir / "pr_curves.png")
+    _save_and_close(save_dir / "pr_curves.png")
 
 
 def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
@@ -672,7 +672,7 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     bar_width = 0.7 / n_models
     x_positions = np.arange(len(metric_keys))
 
-    fig, ax = plt.subplots(figsize=(14, 6))
+    _, ax = plt.subplots(figsize=(14, 6))
 
     for model_idx, metrics in enumerate(all_metrics):
         values = [metrics[k] for k in metric_keys]
@@ -700,7 +700,7 @@ def plot_metrics_bar(all_metrics: list[dict], save_dir: Path) -> None:
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-   _save_and_close(save_dir / "metrics_bar.png")
+    _save_and_close(save_dir / "metrics_bar.png")
 
 
 def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
@@ -739,7 +739,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
         for b in branch_names
     ])
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    _, ax = plt.subplots(figsize=(10, 4))
 
     image = ax.imshow(
         data,
@@ -773,7 +773,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
             )
 
     plt.tight_layout()
-   _save_and_close(save_dir / "branch_heatmap.png")
+    _save_and_close(save_dir / "branch_heatmap.png")
 
 
 def plot_branch_vs_fusion(
@@ -843,7 +843,7 @@ def plot_branch_vs_fusion(
     ax.grid(axis="y", alpha=0.3)
 
     plt.tight_layout()
-   _save_and_close(save_dir / "branch_vs_fusion.png")
+    _save_and_close(save_dir / "branch_vs_fusion.png")
 
 
 def plot_per_generator_accuracy(
@@ -870,7 +870,7 @@ def plot_per_generator_accuracy(
         for _, row in generator_df.iterrows()
     ]
 
-    fig, ax = plt.subplots(figsize=(10, max(4, len(generator_df) * 0.5)))
+    _, ax = plt.subplots(figsize=(10, max(4, len(generator_df) * 0.5)))
 
     bars = ax.barh(
         y_positions,
@@ -908,7 +908,7 @@ def plot_per_generator_accuracy(
     plt.tight_layout()
 
     safe_name = model_name.replace(" ", "").lower()
-   _save_and_close(save_dir / f"per_generator{safe_name}.png")
+    _save_and_close(save_dir / f"per_generator{safe_name}.png")
 
 
 # ---------------------------------------------------------------------------
