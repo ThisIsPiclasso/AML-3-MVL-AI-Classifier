@@ -3,8 +3,9 @@ import hashlib
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from PIL import Image
 from pydantic import BaseModel, Field
-
-from MVL_AI_Classifier.constants import PATCH_SIZE
+import torch
+import torch.nn.functional as F
+from MVL_AI_Classifier.constants import PATCH_SIZE, MODEL_CONFIGURATION
 
 app = FastAPI(
     title="Multi-view AI Detection API",
@@ -113,12 +114,98 @@ async def inf(file: UploadFile = File(None)):
             status_code=422,
             detail=f"Image size is too small ({width}x{height}px). Minimum size required is {PATCH_SIZE}x{PATCH_SIZE}px.",
         )
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device: {device}")
 
-    # Placeholder for actual prediction code, e.g., prediction, confidence = model.predict(img)
-    prediction, confidence = model.predict(img)
+    preprocessed_input = preprocess(img, MODEL_CONFIGURATION, PATCH_SIZE)
+    input_tensors = {
+        k: v.unsqueeze(0).to(device) for k, v in preprocessed_input.items()
+    }
+
+    with torch.no_grad():
+        outputs = model(input_tensors)
+        fusion_probs = F.softmax(outputs["fusion"], dim=1).squeeze(0)
+        confidence = fusion_probs[1].item()
+
+        # if we want to return confidence per view at some point
+        view_details = {}
+        for branch_name, branch_logits in outputs["branches"].items():
+            branch_probs = F.softmax(branch_logits, dim=1).squeeze(0)
+            view_details[branch_name] = round(branch_probs[1].item(), 4)
+
+    prediction = "Synthetic/Fake" if confidence > 0.5 else "Authentic/Real"
 
     prediction_result = {"prediction": prediction, "confidence": confidence}
 
     request_history[file_hash] = prediction_result
 
     return prediction_result
+
+
+def extract_patch(image: Image.Image, patch_size=PATCH_SIZE) -> Image.Image:
+    width, height = image.size
+    left = (width - patch_size) // 2
+    top = (height - patch_size) // 2
+    right = left + patch_size
+    bottom = top + patch_size
+
+    return image.crop((left, top, right, bottom))
+
+
+def convert_image(image: Image.Image):
+    if image.format == "JPEG":
+        return image
+
+    # check for transpatency and convert to RGB with white background if needed
+    if image.mode in ("RGBA", "P", "LA"):
+        background = Image.new("RGB", image.size, (255, 255, 255))
+        background.paste(
+            image, mask=image.split()[-1] if image.mode == "RGBA" else None
+        )
+        image = background
+    elif image.mode != "RGB":
+        image = image.convert("RGB")
+
+    buffer = io.BytesIO()
+
+    image.save(buffer, format="JPEG", quality=95, optimize=True)
+    buffer.seek(0)
+    jpeg_image = Image.open(buffer)
+    jpeg_image.load()
+
+    return jpeg_image
+
+
+def preprocess(
+    image_: Image.Image,
+    model_configuration: dict = MODEL_CONFIGURATION,
+    patch_size: int = PATCH_SIZE,
+) -> dict:
+    """
+    Preprocesses the input image according to the specified view configuration.
+    Parameters:
+        - image: A PIL Image object to be preprocessed.
+        - model_configuration: A dictionary containing the configuration for each view, including the preprocessor and expected input shape.
+        - patch_size: The size of the central patch to be extracted from the image for processing.
+    Returns:
+        - A dictionary containing the preprocessed views ready for model inference.
+    """
+    image_ = convert_image(image_)
+    patch = extract_patch(image_, patch_size)
+
+    view_outputs = {}
+    preprocessors = {
+        view_name: config_["preprocessor"]
+        for view_name, config_ in model_configuration.items()
+    }
+
+    for view_name, preprocessor in preprocessors.items():
+        raw_output = preprocessor(patch)
+
+        if not isinstance(raw_output, torch.Tensor):
+            tensor_output = torch.from_numpy(raw_output).float()
+        else:
+            tensor_output = raw_output.float()
+
+        view_outputs[view_name] = tensor_output.detach()
+    return view_outputs
