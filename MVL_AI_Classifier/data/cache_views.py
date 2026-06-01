@@ -5,7 +5,7 @@ from h5py import Dataset
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from train import MODEL_CONFIGURATION as VIEW_CONFIGURATION
+from ..constants import MODEL_CONFIGURATION
 
 # Resolve paths to ensure imports from your project directory work flawlessly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -189,7 +189,7 @@ if __name__ == "__main__":
     train_save_path = os.path.join(CACHE_DIR, "train_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
-        view_config=VIEW_CONFIGURATION,
+        view_config=MODEL_CONFIGURATION,
         split="train",
         save_path=train_save_path,
     )
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     val_save_path = os.path.join(CACHE_DIR, "val_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
-        view_config=VIEW_CONFIGURATION,
+        view_config=MODEL_CONFIGURATION,
         split="val",
         save_path=val_save_path,
     )
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     test_save_path = os.path.join(CACHE_DIR, "test_features.h5")
     compile_split_cache(
         parquet_file=PARQUET_FILE,
-        view_config=VIEW_CONFIGURATION,
+        view_config=MODEL_CONFIGURATION,
         split="test",
         save_path=test_save_path,
     )
