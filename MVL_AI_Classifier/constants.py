@@ -1,8 +1,3 @@
-from features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
-from features.dct_pipeline import DCTDistributionPreprocessor
-from features.glcm_pipeline import GLCMPreprocessor
-from features.noise_residuals_pipeline import NoiseResidualPreprocessor
-
 # Side length of the square input patch in pixels.
 # Must be a power of 2 (efficient FFT) and divisible by JPEG_BLOCK_SIZE.
 PATCH_SIZE = 256
@@ -73,30 +68,3 @@ TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h
 BASELINE_EPOCHS = 10
 BASELINE_BATCH_SIZE = 32
 BASELINE_LR = 1e-3
-
-MODEL_CONFIGURATION = {
-    "aps": {
-        "model_type": "mlp",
-        "input_shape": (DEFAULT_N_BINS,),
-        "preprocessor": AzimuthalPowerSpectrumPreprocessor(),
-    },
-    "dct": {
-        "model_type": "cnn",
-        "input_shape": (12, 8, 8),  # this needs defaults to set input shape
-        "preprocessor": DCTDistributionPreprocessor(),
-    },
-    "glcm": {
-        "model_type": "cnn",
-        "input_shape": (4, DEFAULT_N_LEVELS, DEFAULT_N_LEVELS),
-        "preprocessor": GLCMPreprocessor(),
-    },
-    "noise": {
-        "model_type": "cnn",
-        "input_shape": (
-            3,
-            PATCH_SIZE // 16,
-            PATCH_SIZE // 16,
-        ),  # fix this with good defaults
-        "preprocessor": NoiseResidualPreprocessor(),
-    },
-}
