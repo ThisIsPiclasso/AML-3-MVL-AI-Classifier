@@ -5,7 +5,7 @@ from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE, DEFAULT_N_B
 from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
     RGBNormalizationPreprocessor,
 )
-from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBGrayscalePreprocessor
 
 
 class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
@@ -40,7 +40,7 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
         self.epsilon = np.float32(epsilon)
 
         self._normalization = RGBNormalizationPreprocessor()
-        self._to_gray = RGBToGrayPreprocessor()
+        self._to_gray = RGBGrayscalePreprocessor()
 
         # Precompute 2D Hann window to taper image edges to zero,
         # preventing spectral leakage from discontinuities at the image boundary

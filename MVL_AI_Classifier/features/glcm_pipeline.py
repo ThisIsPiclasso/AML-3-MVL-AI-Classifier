@@ -4,11 +4,11 @@ from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
     RGBNormalizationPreprocessor,
 )
-from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBGrayscalePreprocessor
 from MVL_AI_Classifier.constants import DEFAULT_N_LEVELS
 
 
-class GLCMPreprocessor(BasePreprocessor):
+class GrayLevelCooccurrenceMatrixPreprocessor(BasePreprocessor):
     """Compute normalized Gray-Level Co-occurrence Matrices from an RGB patch.
 
     Four directional spatial offsets are computed:
@@ -49,7 +49,7 @@ class GLCMPreprocessor(BasePreprocessor):
         self._scale = np.float32(self.n_levels / 255.0)
 
         self._normalization = RGBNormalizationPreprocessor()
-        self._to_gray = RGBToGrayPreprocessor()
+        self._to_gray = RGBGrayscalePreprocessor()
 
     def _compute_glcm(
         self,

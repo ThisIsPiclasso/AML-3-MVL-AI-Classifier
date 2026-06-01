@@ -25,6 +25,13 @@ class DataManager:
         use_cache: bool = True,
         num_sections: int = 2,
     ):
+        """Initialize the DataManager with the given view configuration, batch size, cache usage, and number of sections for splitting.
+        Args:
+            view_configuration (dict): A dictionary specifying which views to include in the dataset.
+            batch_size (int): The number of samples per batch to load.
+            use_cache (bool): Whether to use cached HDF5 files for loading data.
+            num_sections (int): The number of sections to split the training data into for memory management.
+        """
         self.view_configuration = view_configuration
         self.batch_size = batch_size
         self.use_cache = use_cache
@@ -38,6 +45,10 @@ class DataManager:
         self.sections = self._get_sections()
 
     def _get_sections(self):
+        """Determine how to split the training data into sections based on the total number of samples and the specified number of sections.
+        Returns:
+            list: A list of tuples, where each tuple contains the start and end indices for a section of the training data.
+        """
         # in case splitting is not needed, return as 1 section
         if not self.use_cache or self.num_sections == 1:
             return [(0, self.total_samples)]
@@ -54,6 +65,12 @@ class DataManager:
         return sections
 
     def get_train_loaders(self, only_first_section: bool = False):
+        """Generate DataLoader objects for the training data, optionally only for the first section.
+        Args:
+            only_first_section (bool): If True, only generate a DataLoader for the first section of the training data.
+        Yields:
+            DataLoader: A DataLoader object for a section of the training data.
+        """
         active_sections = [self.sections[0]] if only_first_section else self.sections
         for idx, (start_idx, end_idx) in enumerate(active_sections):
             print(f"loading section {idx+1} from {start_idx} until {end_idx}")
@@ -100,6 +117,10 @@ class DataManager:
                 pass
 
     def get_val_loader(self):
+        """Generate a DataLoader object for the validation data.
+        Returns:
+            DataLoader: A DataLoader object for the validation data.
+        """
         print("loading validation set")
         if self.use_cache and os.path.exists(VAL_CACHE):
             val_data = CachedDataClass(hdf5_path=VAL_CACHE, view_keys=self.active_keys)
@@ -116,6 +137,10 @@ class DataManager:
         return val_loader
 
     def get_test_loader(self):
+        """Generate a DataLoader object for the test data.
+        Returns:
+            DataLoader: A DataLoader object for the test data.
+        """
         if self.use_cache and os.path.exists(TEST_CACHE):
             test_data = CachedDataClass(
                 hdf5_path=TEST_CACHE, view_keys=self.active_keys

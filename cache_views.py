@@ -5,26 +5,18 @@ from h5py import Dataset
 import numpy as np
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from .MVL_AI_Classifier.constants import MODEL_CONFIGURATION
+from MVL_AI_Classifier.model_configuration import MODEL_CONFIGURATION
+from MVL_AI_Classifier.constants import PARQUET_FILE, BATCH_SIZE, NUM_WORKERS, CACHE_DIR
 
-# Resolve paths to ensure imports from your project directory work flawlessly
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from MVL_AI_Classifier.data.dataclass import DataClass
-from MVL_AI_Classifier.constants import PARQUET_FILE
+
 from PIL import ImageFile
 
-# 🚀 Allow PIL to open and load broken/truncated images without crashing
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-# ─── HARDWARE TARGET CONFIGURATION ──────────────────────────────────────────
-# Define where the pristine HDF5 arrays will sit on your Unraid cache pool
-CACHE_DIR = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
-BATCH_SIZE = 64
-NUM_WORKERS = 6
-
-# Mirror your exact network vision input configurations
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def compile_split_cache(
@@ -33,10 +25,12 @@ def compile_split_cache(
     """
     Extracts features from the raw dataset and caches them into an HDF5 matrix layout.
     Supports seamless resuming if interrupted and skips corrupted image clusters.
+    Args:
+        parquet_file: Path to the original dataset in Parquet format.
+        view_config: Dictionary specifying which views to include in the dataset.
+        split: One of "train", "val", or "test" to specify which dataset split to process.
+        save_path: Path where the HDF5 cache file will be saved. If the file already exists, the function will attempt to resume from where it left off.
     """
-    print("\n──────────────────────────────────────────────────")
-    print(f"🎬 Initializing Data Caching Engine for: {split.upper()}")
-    print("──────────────────────────────────────────────────")
 
     original_dataset = DataClass(
         parquet_file=parquet_file, view_configuration=view_config, split=split
@@ -50,9 +44,8 @@ def compile_split_cache(
     first_sample = original_dataset[0]
 
     start_idx = 0
-    file_mode = "w"  # Default to fresh initialization
+    file_mode = "w"
 
-    # ─── RESUME DETECTION LOGIC ──────────────────────────────────────────────
     if os.path.exists(save_path):
         try:
             with h5py.File(save_path, "r") as f_check:
@@ -99,7 +92,6 @@ def compile_split_cache(
         except Exception as e:
             print(f"file analysis failed ({e})")
             file_mode = "w"
-    # ─────────────────────────────────────────────────────────────────────────
 
     loader = DataLoader(
         original_dataset,

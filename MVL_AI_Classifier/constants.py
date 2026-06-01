@@ -60,6 +60,7 @@ BATCH_SIZE = 64
 N_TRIALS = 100
 MAX_TRAINING_TIME = 86400  # in seconds (24 hour)
 MAX_TUNE_EPOCHS = 4
+CACHE_DIR = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
 TRAIN_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/train_features.h5"
 VAL_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/val_features.h5"
 TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h5"

@@ -3,7 +3,7 @@ import numpy as np
 from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 
 
-class RGBToGrayPreprocessor(BasePreprocessor):
+class RGBGrayscalePreprocessor(BasePreprocessor):
     """Convert a float32 RGB image to single-channel grayscale.
 
     Uses the ITU-R BT.601 luminance formula:

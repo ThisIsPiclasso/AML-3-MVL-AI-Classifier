@@ -2,54 +2,18 @@ import torch
 
 from MVL_AI_Classifier.models.custom_loss import MultiViewLoss
 from MVL_AI_Classifier.models.multi_view_manager_concat import MultiViewNet
-from MVL_AI_Classifier.constants import (
-    BATCH_SIZE,
-    DEFAULT_N_BINS,
-    DEFAULT_N_LEVELS,
-    PATCH_SIZE,
-    NUM_EPOCHS,
-    DEFAULT_LEARNING_RATE,
-)
-from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
-from MVL_AI_Classifier.features.dct_pipeline import DCTDistributionPreprocessor
-from MVL_AI_Classifier.features.glcm_pipeline import GLCMPreprocessor
-from MVL_AI_Classifier.features.noise_residuals_pipeline import (
-    NoiseResidualPreprocessor,
-)
+from MVL_AI_Classifier.constants import BATCH_SIZE, NUM_EPOCHS, DEFAULT_LEARNING_RATE
+from MVL_AI_Classifier.model_configuration import MODEL_CONFIGURATION
 from MVL_AI_Classifier.data.datamanager import DataManager
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 
-MODEL_CONFIGURATION = {
-    "aps": {
-        "model_type": "mlp",
-        "input_shape": (DEFAULT_N_BINS,),
-        "preprocessor": AzimuthalPowerSpectrumPreprocessor(),
-    },
-    "dct": {
-        "model_type": "cnn",
-        "input_shape": (12, 8, 8),  # this needs defaults to set input shape
-        "preprocessor": DCTDistributionPreprocessor(),
-    },
-    "glcm": {
-        "model_type": "cnn",
-        "input_shape": (4, DEFAULT_N_LEVELS, DEFAULT_N_LEVELS),
-        "preprocessor": GLCMPreprocessor(),
-    },
-    "noise": {
-        "model_type": "cnn",
-        "input_shape": (
-            3,
-            PATCH_SIZE // 16,
-            PATCH_SIZE // 16,
-        ),  # fix this with good defaults
-        "preprocessor": NoiseResidualPreprocessor(),
-    },
-}
-
-
 def main():
+    """Main function to orchestrate the training process of the multi-view neural network for image classification.
+    It initializes the data manager, model, loss function, and optimizer, and then iteratively trains and validates
+    the model across multiple epochs while tracking performance metrics and saving the best model checkpoints.
+    """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
     writer = SummaryWriter(log_dir="runs/multiview_final_training")

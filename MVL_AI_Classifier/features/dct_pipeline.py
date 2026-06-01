@@ -13,7 +13,7 @@ from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
 )
 
 
-class DCTDistributionPreprocessor(BasePreprocessor):
+class DiscreteCosineTransformPreprocessor(BasePreprocessor):
     """Compute per-channel distributional statistics of block DCT coefficients.
 
     The image is partitioned into 1024 non-overlapping 8x8 blocks (the
