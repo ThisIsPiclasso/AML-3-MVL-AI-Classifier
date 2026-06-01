@@ -121,6 +121,8 @@ async def inf(file: UploadFile = File(None)):
     model = MultiViewNet(view_configuration=MODEL_CONFIGURATION, embed_dim=512).to(
         device
     )
+    weights_checkpoint = "checkpoints/multiview_model_epoch_11.pt"
+    model.load_state_dict(torch.load(weights_checkpoint, map_location=device))
     model.eval()
     preprocessed_input = preprocess(img, MODEL_CONFIGURATION, PATCH_SIZE)
     input_tensors = {
