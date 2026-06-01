@@ -1,9 +1,11 @@
 import numpy as np
 
-from features.base_processor import BasePreprocessor
+from MVL_AI_Classifier.features.base_processor import BasePreprocessor
 from MVL_AI_Classifier.constants import DEFAULT_EPSILON, PATCH_SIZE, DEFAULT_N_BINS
-from features.rgb_normalization_pipeline import RGBNormalizationPreprocessor
-from features.rgb_gray_pipeline import RGBToGrayPreprocessor
+from MVL_AI_Classifier.features.rgb_normalization_pipeline import (
+    RGBNormalizationPreprocessor,
+)
+from MVL_AI_Classifier.features.rgb_gray_pipeline import RGBGrayscalePreprocessor
 
 
 class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
@@ -18,7 +20,6 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
     rotationally-invariant summary of which spatial frequencies are
     present in the image.
     """
-    
 
     def __init__(
         self,
@@ -34,12 +35,12 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
             epsilon: Small constant added inside the log transform to
                 prevent ``log(0)``.
         """
-        
+
         self.n_bins = int(n_bins)
         self.epsilon = np.float32(epsilon)
 
         self._normalization = RGBNormalizationPreprocessor()
-        self._to_gray = RGBToGrayPreprocessor()
+        self._to_gray = RGBGrayscalePreprocessor()
 
         # Precompute 2D Hann window to taper image edges to zero,
         # preventing spectral leakage from discontinuities at the image boundary
@@ -73,7 +74,7 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
                   mean computation.
         """
         # Center of the shifted FFT grid (DC component location).
-        center_x = center_y = PATCH_SIZE // 2 # 128 for PATCH_SIZE=256
+        center_x = center_y = PATCH_SIZE // 2  # 128 for PATCH_SIZE=256
 
         # Coordinate grids for all 256×256 positions
         # indexing="ij" results in a matrix indexing, with
@@ -84,7 +85,9 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
             indexing="ij",
         )
         # Euclidean distance from each grid position to center.
-        radius = np.sqrt((col_coords - center_x) ** 2 + (row_coords - center_y) ** 2).astype(np.float32)
+        radius = np.sqrt(
+            (col_coords - center_x) ** 2 + (row_coords - center_y) ** 2
+        ).astype(np.float32)
         radius_max = float(radius.max())
 
         # Create n_bins equally-spaced radial bins from 0 to max_radius.
@@ -96,7 +99,7 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
         # np.digitize returns 1-based indices; subtract 1 for 0-based.
         # right=False means intervals are [left, right) — closed-left, open-right.
         bin_idx = np.digitize(radius.ravel(), bin_edges, right=False) - 1
-        
+
         # Clip to valid range [0, n_bins-1].
         # Necessary because positions exactly at max_radius get index n_bins
         # from digitize (they exceed the last left edge)
@@ -114,7 +117,7 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
 
         Args:
             image_patch: RGB image of shape ``(PATCH_SIZE, PATCH_SIZE, 3)``
-            
+
         Returns:
             Log-transformed mean power per radial frequency bin,
             shape ``(n_bins,)`` as float32.
@@ -127,12 +130,12 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
         # (256, 256)
         gray_windowed = (gray - gray.mean()) * self._window_2d
 
-        #fft2: spatial domain → frequency domain (complex coefficients).
+        # fft2: spatial domain → frequency domain (complex coefficients).
         # fftshift: move DC from corner (0,0) to center (128,128) to match
         #   the radial bin lookup table built in _build_radial_bin_lookup.
         # shape (256, 256)
         F_shifted = np.fft.fftshift(np.fft.fft2(gray_windowed))
-        
+
         # Power = |F|², discarding phase (position/shift of each frequency
         # component) and keeping only energy (how strong each frequency is).
         # shape (65536,)
@@ -152,9 +155,9 @@ class AzimuthalPowerSpectrumPreprocessor(BasePreprocessor):
             sums / self._bin_counts,
             np.float32(0.0),
         )
-        
+
         # Power values span 10+ orders of magnitude; log maps this to
         # approximately [-20, 20], which neural networks handle better.
         # epsilon prevents log(0) for empty bins.
-        
+
         return np.log(spectrum + self.epsilon).astype(np.float32)

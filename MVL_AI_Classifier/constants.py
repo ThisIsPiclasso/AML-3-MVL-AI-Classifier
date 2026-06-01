@@ -20,3 +20,59 @@ DEFAULT_EPSILON = 1e-8
 DEFAULT_N_BINS = 64
 
 DEFAULT_N_LEVELS = 32
+# dct default parameters
+DEFAULT_LOG_COMPRESS_DISPERSION = True  # log compression for MAD statistic
+DEFAULT_SPARSITY_THRESHOLD = 0.10  # sparsity threshold for dct statistic
+
+# noise residuals default parameters
+DEFAULT_SIGMA = 1.0  # sigma value for gaussian filter
+DEFAULT_WINDOW_SIZE = 16
+
+# Data frame constants
+DEFAULT_AI_PATH = "./data/subset/ai"
+DEFAULT_NATURE_PATH = "./data/subset/nature"
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+NAME_MAP = {
+    "adm": "ADM",
+    "glide": "Glide",
+    "midjourney": "Midjourney",
+    "sdv4": "Stable Diffusion v1.4",
+    "sdv5": "Stable Diffusion v1.5",
+    "vqdm": "VQDM",
+    "wukong": "Wukong",
+}
+SAMPLE_SIZE = 1000
+
+# Default seed used for reproductibility
+DEFAULT_SEED = 42
+
+# Default training/validation/testing split
+DEFAULT_TRAIN_SPLIT = 0.8
+DEFAULT_VAL_SPLIT = 0.1
+DEFAULT_TEST_SPLIT = 0.1
+
+# Defaults for training
+PARQUET_FILE = "./data/data_parquet/dataset.parquet"
+NUM_WORKERS = 2
+NUM_EPOCHS = 15
+
+# hyperparameters for multi-view loss
+DEFAULT_ALPHA = 0.1
+DEFAULT_BETA = 0.20749566933161628
+DEFAULT_TEMPERATURE = 3.5
+DEFAULT_LEARNING_RATE = 0.00023462467904408212
+BATCH_SIZE = 64
+
+# Defaults for Optuna hyperparameter tuning
+N_TRIALS = 100
+MAX_TRAINING_TIME = 86400  # in seconds (24 hour)
+MAX_TUNE_EPOCHS = 4
+CACHE_DIR = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache"
+TRAIN_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/train_features.h5"
+VAL_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/val_features.h5"
+TEST_CACHE = "/workspace/AML-3-MVL-AI-Classifier/data/data_cache/test_features.h5"
+
+# defauls for baseline CNN
+BASELINE_EPOCHS = 10
+BASELINE_BATCH_SIZE = 32
+BASELINE_LR = 1e-3

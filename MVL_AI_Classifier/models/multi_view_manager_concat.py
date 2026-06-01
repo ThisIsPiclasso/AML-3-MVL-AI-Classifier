@@ -1,6 +1,13 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
+
 from MVL_AI_Classifier.models.layer_arc import MODEL_DICTIONARY
+from MVL_AI_Classifier.constants import (
+    MAX_TRAINING_TIME,
+    N_TRIALS,
+    MAX_TUNE_EPOCHS,
+)
 
 
 class MultiViewNet(nn.Module):
@@ -92,3 +99,113 @@ class MultiViewNet(nn.Module):
             "branches": branch_logits,  # For L_branch
             "embeddings": branch_features,  # For feature analysis/visualization
         }
+
+    def tune(
+        self,
+        data_manager,
+        study,
+        n_trials: int = N_TRIALS,
+        timeout: int = MAX_TRAINING_TIME,
+    ) -> dict:
+        """Runs an automated hyperparameter tuning sweep on this architecture configuration.
+
+        Args:
+            n_trials (int): Maximum number of parameter combinations to evaluate.
+            timeout (int): Total seconds allowed for the tuning process.
+
+        Returns:
+            dict: The optimal hyperparameter values found during tuning.
+        """
+        # Lazy imports to keep sepparate tuning specific dependecies
+        import optuna
+        from optuna import TrialPruned
+        from train import train_epoch, validate
+        from MVL_AI_Classifier.models.custom_loss import MultiViewLoss
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"tuning  on device: {device}")
+        train_loaders = data_manager.get_train_loaders(only_first_section=True)
+        first_loader = next(train_loaders)
+        tuning_train_dataset = first_loader.dataset  # Extract the raw memory arrays
+
+        val_loader = data_manager.get_val_loader()
+        tuning_val_dataset = val_loader.dataset
+
+        def objective(trial: optuna.Trial) -> float:
+            """
+            The objective function for Optuna hyperparameter tuning.
+            It trains the model with the given trial's hyperparameters and returns the validation accuracy.
+            Args:
+                trial (optuna.Trial): The current trial object containing the hyperparameters to evaluate.
+            Returns:
+                float: The validation accuracy achieved with the current trial's hyperparameters."""
+            # Dynamically sample values for speeding the process
+            lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
+            batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
+            alpha = trial.suggest_float("alpha", 0.1, 1.0, step=0.1)
+            beta = trial.suggest_float("beta", 0.01, 0.5, log=True)
+            temperature = trial.suggest_float("temperature", 1.5, 4.0, step=0.5)
+
+            # Initialize custom multi-view loss module using tuned configurations
+            criterion = MultiViewLoss(alpha=alpha, beta=beta, temperature=temperature)
+
+            train_loader = DataLoader(
+                tuning_train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                num_workers=0,
+                pin_memory=True,
+            )
+
+            val_loader = DataLoader(
+                tuning_val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=0,
+                pin_memory=True,
+            )
+            # Model setup using the custom architecture
+            model = MultiViewNet(
+                view_configuration=self.view_configuration,
+                embed_dim=self.embed_dim,
+            ).to(device)
+
+            optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
+
+            val_loss = 0.0
+            val_accuracy = 0.0
+
+            for epoch in range(MAX_TUNE_EPOCHS):
+                # Training loop
+                # for train_loader in data_manager.get_train_loaders(
+                #    only_first_section=True
+                # ):
+                #    _, _, _ = train_epoch(
+                #        model, train_loader, optimizer, criterion, device
+                #    )
+
+                _, _, _ = train_epoch(model, train_loader, optimizer, criterion, device)
+
+                val_loss, val_accuracy = validate(model, val_loader, criterion, device)
+
+                print(
+                    f"Epoch [{epoch+1}/{MAX_TUNE_EPOCHS}] -> Val Loss: {val_loss:.4f} | Val Accuracy: {val_accuracy:.2f}%"
+                )
+
+                trial.report(val_accuracy, epoch)
+                if trial.should_prune():
+                    raise TrialPruned()
+
+            trial.set_user_attr("accuracy", val_accuracy)
+            return val_loss
+
+        # Start optimisation
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            timeout=timeout,
+        )
+
+        print("\n--- Tuning Optimization Complete ---")
+        print(f"Best Trial Val Accuracy: {study.best_trial.value:.2f}")
+        return study.best_trial.params
