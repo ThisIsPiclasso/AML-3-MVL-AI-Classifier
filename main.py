@@ -52,7 +52,7 @@ class Config:
 request_history = {}
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = MultiViewNet(view_configuration=MODEL_CONFIGURATION, embed_dim=512).to(device)
-trained_model = "trained_model.pt"
+trained_model = "models/trained_model.pt"
 model.load_state_dict(torch.load(trained_model, map_location=device))
 model.eval()
 
