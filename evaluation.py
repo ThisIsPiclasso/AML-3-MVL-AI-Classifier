@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 
 import numpy as np
@@ -32,21 +31,18 @@ from sklearn.metrics import (
     roc_curve,
 )
 
-from MVL_AI_Classifier.data.cached_dataset import CachedDataClass
+from MVL_AI_Classifier.data.cached_dataclass import CachedDataClass
 from MVL_AI_Classifier.data.dataclass import DataClass
 
-from MVL_AI_Classifier.features.aps_pipeline import (
-    AzimuthalPowerSpectrumPreprocessor,
-)
-from MVL_AI_Classifier.features.dct_pipeline import (
-    DCTDistributionPreprocessor,
-)
+from MVL_AI_Classifier.features.aps_pipeline import AzimuthalPowerSpectrumPreprocessor
+
+from MVL_AI_Classifier.features.dct_pipeline import DiscreteCosineTransformPreprocessor
+
 from MVL_AI_Classifier.features.glcm_pipeline import (
-    GLCMPreprocessor,
+    GrayLevelCooccurrenceMatrixPreprocessor,
 )
-from MVL_AI_Classifier.features.noise_residuals_pipeline import (
-    NoiseResidualPreprocessor,
-)
+
+from MVL_AI_Classifier.features.nr_pipeline import NoiseResidualPreprocessor
 
 from MVL_AI_Classifier.models.multi_view_manager_concat import MultiViewNet
 
@@ -59,7 +55,7 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     NUM_WORKERS,
     PARQUET_FILE,
-    PATCH_SIZE
+    PATCH_SIZE,
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -71,8 +67,8 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 RESULTS_DIR = Path("evaluation_results")
 
 CLASS_NAMES = [
-    "Real", #0
-    "AI-Generated", #1
+    "Real",  # 0
+    "AI-Generated",  # 1
 ]
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,7 +89,7 @@ MODEL_CONFIGURATION = {
     "dct": {
         "model_type": "cnn",
         "input_shape": (12, 8, 8),
-        "preprocessor": DCTDistributionPreprocessor(),
+        "preprocessor": DiscreteCosineTransformPreprocessor(),
     },
     "glcm": {
         "model_type": "cnn",
@@ -102,7 +98,7 @@ MODEL_CONFIGURATION = {
             DEFAULT_N_LEVELS,
             DEFAULT_N_LEVELS,
         ),
-        "preprocessor": GLCMPreprocessor(),
+        "preprocessor": GrayLevelCooccurrenceMatrixPreprocessor(),
     },
     "noise": {
         "model_type": "cnn",
@@ -115,7 +111,7 @@ MODEL_CONFIGURATION = {
     },
 }
 
-BEST_MODEL_PATH = Path("best_multiview_model.pt")
+BEST_MODEL_PATH = Path("models/trained_model.pt")
 
 CACHE_DIR = Path("/workspace/AML-3-MVL-AI-Classifier/data/data_cache")
 
@@ -169,10 +165,12 @@ class RawPixelDataset(DataClass):
         item = self.df.iloc[idx]
 
         with Image.open(item["path"]) as image:
-            patch = self._get_patch(image, idx)
+            patch = self._get_patch(image, idx).convert("RGB")
 
         pixel_array = np.array(patch, dtype=np.float32) / 255.0
-        pixel_tensor = torch.from_numpy(pixel_array.transpose(2, 0, 1)) #from (Height, Width, Colour) to (Colour, Height, Width)
+        pixel_tensor = torch.from_numpy(
+            pixel_array.transpose(2, 0, 1)
+        )  # from (Height, Width, Colour) to (Colour, Height, Width)
 
         label = torch.tensor(int(item["label"]), dtype=torch.long)
 
@@ -509,9 +507,7 @@ def compute_per_generator_accuracy(
             group_specificity = float((group_pred == 0).sum()) / n_samples
         else:
             # AI-generated or mixed group: specificity is not the intended summary.
-            group_recall = float(
-                recall_score(group_true, group_pred, zero_division=0)
-            )
+            group_recall = float(recall_score(group_true, group_pred, zero_division=0))
             group_specificity = float("nan")
 
         rows.append(
@@ -734,10 +730,7 @@ def plot_branch_heatmap(branch_metrics: dict, save_dir: Path) -> None:
 
     branch_names = list(branch_metrics.keys())
 
-    data = np.array([
-        [branch_metrics[b][k] for k in metric_keys]
-        for b in branch_names
-    ])
+    data = np.array([[branch_metrics[b][k] for k in metric_keys] for b in branch_names])
 
     _, ax = plt.subplots(figsize=(10, 4))
 
@@ -970,10 +963,7 @@ def _print_summary(
     if branch_m:
         best_branch, best_metrics = max(branch_m.items(), key=lambda x: x[1]["f1"])
 
-        print(
-            f"Best branch: {best_branch.upper()} "
-            f"F1={best_metrics['f1']:.4f}"
-        )
+        print(f"Best branch: {best_branch.upper()} " f"F1={best_metrics['f1']:.4f}")
 
         if all(fusion_m["f1"] >= bm["f1"] for bm in branch_m.values()):
             print("Fusion outperforms all individual branches.")
@@ -1053,7 +1043,7 @@ def main() -> None:
     )
 
     # 4. Multi-view inference
-    t0 = time.time()
+    # t0 = time.time()
 
     mvl_results = collect_multiview_predictions(
         mvl_model,
