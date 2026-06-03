@@ -1,6 +1,6 @@
 import time
 from pathlib import Path
-
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -116,6 +116,7 @@ MODEL_CONFIGURATION = {
 }
 
 BEST_MODEL_PATH = Path("best_multiview_model.pt")
+BASELINE_MODEL_PATH = Path("baseline_cnn.pt")
 
 CACHE_DIR = Path("/workspace/AML-3-MVL-AI-Classifier/data/data_cache")
 
@@ -309,27 +310,34 @@ def train_and_predict_baseline(
             - ``"predictions"``: Binary predictions as a NumPy array.
     """
     model = BaselineCNN().to(DEVICE)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
+    if BASELINE_MODEL_PATH.exists():
+        model.load_state_dict(
+            torch.load(BASELINE_MODEL_PATH, map_location=DEVICE)
+        )
 
-    model.train()
-    for _epoch in range(BASELINE_EPOCHS):
-        for batch in train_loader:
-            images = batch["image"].to(DEVICE)
-            labels = batch["label"].to(DEVICE)
+    else:
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
 
-            optimizer.zero_grad()
-            loss = criterion(model(images), labels)
-            loss.backward()
-            optimizer.step()
+        model.train()
+        for _epoch in range(BASELINE_EPOCHS):
+            for batch in tqdm(train_loader, desc=f"Epoch {_epoch + 1}/{BASELINE_EPOCHS}"):
+                images = batch["image"].to(DEVICE)
+                labels = batch["label"].to(DEVICE)
+
+                optimizer.zero_grad()
+                loss = criterion(model(images), labels)
+                loss.backward()
+                optimizer.step()
 
     model.eval()
+    torch.save(model.state_dict(), BASELINE_MODEL_PATH)
 
     all_probs: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in tqdm(test_loader, desc="Testing"):
             images = batch["image"].to(DEVICE)
 
             all_probs.append(_probabilities_from_logits(model(images)))
