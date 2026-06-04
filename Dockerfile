@@ -35,7 +35,7 @@ COPY MVL_AI_Classifier/models/__init__.py ./MVL_AI_Classifier/models/
 COPY MVL_AI_Classifier/models/multi_view_manager_concat.py ./MVL_AI_Classifier/models/
 COPY MVL_AI_Classifier/models/layer_arc.py ./MVL_AI_Classifier/models/
 #import main app code
-COPy main.py ./ 
+COPY main.py ./ 
 
 EXPOSE 8000 8501
 
