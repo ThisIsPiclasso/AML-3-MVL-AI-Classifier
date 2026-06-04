@@ -22,7 +22,8 @@ COPY --from=builder /app/.venv /app/.venv
 
 ENV PATH="/app/.venv/bin:$PATH"
 # import trained model
-COPY models/trained_model.pt ./models/
+#COPY models/trained_model.pt ./models/
+#IN CURRENT IMPLEMENTATION THIS IS INJECTED DIRECTLY BY UNRAID
 
 # import constants
 COPY MVL_AI_Classifier/constants.py ./MVL_AI_Classifier/
