@@ -119,7 +119,14 @@ async def inf(file: UploadFile = File(None)):
             status_code=422,
             detail=f"Image size is too small ({width}x{height}px). Minimum size required is {PATCH_SIZE}x{PATCH_SIZE}px.",
         )
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device: {device}")
+    model = MultiViewNet(view_configuration=MODEL_CONFIGURATION, embed_dim=512).to(
+        device
+    )
+    weights_checkpoint = "checkpoints/multiview_model_epoch_11.pt"
+    model.load_state_dict(torch.load(weights_checkpoint, map_location=device))
+    model.eval()
     preprocessed_input = preprocess(img, MODEL_CONFIGURATION, PATCH_SIZE)
     input_tensors = {
         k: v.unsqueeze(0).to(device) for k, v in preprocessed_input.items()
