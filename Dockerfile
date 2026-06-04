@@ -1,7 +1,7 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 
 WORKDIR /app
-
+ENV UV_LINK_MODE=copy
 COPY pyproject.toml uv.lock ./
 
 RUN uv python install 3.12
@@ -39,4 +39,4 @@ COPy main.py ./
 
 EXPOSE 8000 8501
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
