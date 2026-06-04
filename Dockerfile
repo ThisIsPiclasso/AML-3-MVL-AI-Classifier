@@ -31,7 +31,7 @@ COPY MVL_AI_Classifier/model_configuration.py ./MVL_AI_Classifier/
 COPY MVL_AI_Classifier/features/ ./MVL_AI_Classifier/features
 #import code related to model
 COPY MVL_AI_Classifier/models/__init__.py ./MVL_AI_Classifier/models/
-COPY MVL_AI_Classifier/models/multi_viewmanager_concat.py ./MVL_AI_Classifier/models/
+COPY MVL_AI_Classifier/models/multi_view_manager_concat.py ./MVL_AI_Classifier/models/
 COPY MVL_AI_Classifier/models/layer_arc.py ./MVL_AI_Classifier/models/
 #import main app code
 COPy main.py ./ 
