@@ -1,26 +1,20 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
-
-WORKDIR /app
-ENV UV_LINK_MODE=copy
-COPY pyproject.toml uv.lock ./
-
-RUN uv python install 3.12
-RUN uv sync --frozen --no-install-project --no-dev
-
-# after this we do not require uv anymore, so we can switch to a smaller base image
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 WORKDIR /app
 
+ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
     libglib2.0-0 \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/.venv /app/.venv
+COPY --from=ghcr.io/astral-sh/uv:latest /usr/local/bin/uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock ./
 
-ENV PATH="/app/.venv/bin:$PATH"
+RUN uv python install 3.12
+RUN uv sync --frozen --no-install-project --no-dev
+
 # import trained model
 #COPY models/trained_model.pt ./models/
 #IN CURRENT IMPLEMENTATION THIS IS INJECTED DIRECTLY BY UNRAID
@@ -39,4 +33,4 @@ COPY main.py ./
 
 EXPOSE 8000 8501
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
