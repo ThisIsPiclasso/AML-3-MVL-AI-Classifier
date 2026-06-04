@@ -1,5 +1,5 @@
 from pathlib import Path
-
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use("Agg")  # Prevent images from opening in a GUI during runs.
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
+from matplotlib.es import 
 
 import torch
 import torch.nn as nn
@@ -55,7 +55,7 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     NUM_WORKERS,
     PARQUET_FILE,
-    PATCH_SIZE,
+    _SIZE,
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -104,14 +104,15 @@ MODEL_CONFIGURATION = {
         "model_type": "cnn",
         "input_shape": (
             3,
-            PATCH_SIZE // 16,
-            PATCH_SIZE // 16,
+            _SIZE // 16,
+            _SIZE // 16,
         ),
         "preprocessor": NoiseResidualPreprocessor(),
     },
 }
 
 BEST_MODEL_PATH = Path("models/trained_model.pt")
+BASELINE_MODEL_PATH = Path("baseline_cnn.pt")
 
 CACHE_DIR = Path("/workspace/AML-3-MVL-AI-Classifier/data/data_cache")
 
@@ -124,11 +125,11 @@ TEST_CACHE_PATH = CACHE_DIR / "test_features.h5"
 
 
 class RawPixelDataset(DataClass):
-    """Dataset that returns raw RGB pixel patches.
+    """Dataset that returns raw RGB pixel es.
 
-    This subclass reuses the parquet loading, split filtering, and patch
+    This subclass reuses the parquet loading, split filtering, and 
     extraction logic provided by ``DataClass``. It skips all view
-    preprocessors and only returns the raw patch as a tensor
+    preprocessors and only returns the raw  as a tensor
 
     Attributes:
         Inherited from ``DataClass``.
@@ -307,19 +308,24 @@ def train_and_predict_baseline(
             - ``"predictions"``: Binary predictions as a NumPy array.
     """
     model = BaselineCNN().to(DEVICE)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
+    if BASELINE_MODEL_PATH.exists():
+        model.load_state_dict(
+            torch.load(BASELINE_MODEL_PATH, map_location=DEVICE)
+        )
+    else: 
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
 
-    model.train()
-    for _epoch in range(BASELINE_EPOCHS):
-        for batch in train_loader:
-            images = batch["image"].to(DEVICE)
-            labels = batch["label"].to(DEVICE)
+        model.train()
+        for _epoch in range(BASELINE_EPOCHS):
+            for batch in tqdm(train_loader, desc=f"Epoch {_epoch + 1}/{BASELINE_EPOCHS}"):
+                images = batch["image"].to(DEVICE)
+                labels = batch["label"].to(DEVICE)
 
-            optimizer.zero_grad()
-            loss = criterion(model(images), labels)
-            loss.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                loss = criterion(model(images), labels)
+                loss.backward()
+                optimizer.step()
 
     model.eval()
 
@@ -327,7 +333,7 @@ def train_and_predict_baseline(
     all_labels: list[np.ndarray] = []
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in tqdm(test_loader, desc="Testing"):
             images = batch["image"].to(DEVICE)
 
             all_probs.append(_probabilities_from_logits(model(images)))
@@ -891,8 +897,8 @@ def plot_per_generator_accuracy(
 
     ax.legend(
         handles=[
-            Patch(facecolor="#4C72B0", label="Real sources"),
-            Patch(facecolor="#DD8452", label="AI generators"),
+            (facecolor="#4C72B0", label="Real sources"),
+            (facecolor="#DD8452", label="AI generators"),
         ],
         loc="lower right",
         fontsize=8,
@@ -1043,7 +1049,6 @@ def main() -> None:
     )
 
     # 4. Multi-view inference
-    # t0 = time.time()
 
     mvl_results = collect_multiview_predictions(
         mvl_model,
