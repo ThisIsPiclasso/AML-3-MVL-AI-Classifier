@@ -102,8 +102,8 @@ MODEL_CONFIGURATION = {
         "model_type": "cnn",
         "input_shape": (
             3,
-            _SIZE // 16,
-            _SIZE // 16,
+            PATCH_SIZE // 16,
+            PATCH_SIZE // 16,
         ),
         "preprocessor": NoiseResidualPreprocessor(),
     },
@@ -897,7 +897,7 @@ def plot_per_generator_accuracy(
     plt.tight_layout()
 
     safe_name = model_name.replace(" ", "").lower()
-    _save_and_close(save_dir / f"per_generator{safe_name}.png")
+    _save_and_close(save_dir / f"per_generator_{safe_name}.png")
 
 
 # ---------------------------------------------------------------------------
@@ -1017,14 +1017,14 @@ def main() -> None:
     baseline_train_loader = DataLoader(
         raw_train_data,
         batch_size=BASELINE_BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         num_workers=NUM_WORKERS,
     )
 
     baseline_test_loader = DataLoader(
         raw_test_data,
         batch_size=BASELINE_BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         num_workers=NUM_WORKERS,
     )
 
