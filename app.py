@@ -1,30 +1,28 @@
 import streamlit as st
 import requests
+from PIL import Image, ImageDraw
 
 st.set_page_config(
-    page_title="Multi-View AI Detector", page_icon="🛡️", layout="centered"
+    page_title="Multi-View Grid AI Detector", page_icon="🛡️", layout="centered"
 )
 
-st.title("🛡️ Multi-View AI Image Detector")
-st.write(
-    "Upload an image below to evaluate it for synthetic or AI-generated manipulation signatures."
-)
+st.title("🛡️ Spatial Multi-View AI Detector")
+st.write("Upload an image canvas to generate a localized forensic heat-map analysis.")
 
-# File uploader widget
 uploaded_file = st.file_uploader(
     "Choose an image canvas...", type=["jpg", "jpeg", "png"]
 )
 
 if uploaded_file is not None:
-    # Display the uploaded image nicely on the screen
-    st.image(uploaded_file, caption="Uploaded Image Asset", use_container_width=True)
+    # Open image locally to draw masks directly onto it
+    base_image = Image.open(uploaded_file).convert("RGBA")
+    st.image(uploaded_file, caption="Original Uploaded Asset", use_container_width=True)
 
-    if st.button("Analyze Image Framework"):
+    if st.button("Generate Patch Map Matrix"):
         with st.spinner(
-            "Extracting forensic noise residuals and frequency domain profiles..."
+            "Executing structural slice evaluations across framework grid..."
         ):
             try:
-                # Prepare payload
                 files = {
                     "file": (
                         uploaded_file.name,
@@ -32,39 +30,75 @@ if uploaded_file is not None:
                         uploaded_file.type,
                     )
                 }
-
-                # Query the backend
                 response = requests.post("http://127.0.0.1:8000/api_post/", files=files)
 
                 if response.status_code == 200:
-                    result = response.json()
+                    results_data = response.json().get("patch_evaluations", [])
 
-                    # Extract variables safely using data fallbacks
-                    prediction = result.get("prediction", "Unknown")
-                    confidence = float(result.get("confidence", 0.0))
+                    # Create an overlay layer for alpha-blended transparency
+                    overlay = Image.new("RGBA", base_image.size, (0, 0, 0, 0))
+                    draw = ImageDraw.Draw(overlay)
+
+                    fake_count = 0
+                    real_count = 0
+
+                    for p in results_data:
+                        left, top, right, bottom = p["box"]
+                        pred = p["prediction"]
+                        conf = p["confidence"]
+
+                        if "Fake" in pred or "Synthetic" in pred:
+                            # Semi-transparent red for fake segments (alpha = 100 out of 255)
+                            draw.rectangle(
+                                [left, top, right, bottom],
+                                fill=(239, 68, 68, 100),
+                                outline=(239, 68, 68, 255),
+                                width=2,
+                            )
+                            fake_count += 1
+                        else:
+                            # Semi-transparent green for real segments (alpha = 60 out of 255)
+                            draw.rectangle(
+                                [left, top, right, bottom],
+                                fill=(34, 197, 94, 60),
+                                outline=(34, 197, 94, 255),
+                                width=2,
+                            )
+                            real_count += 1
+
+                    # Combine original image with the semi-transparent overlay
+                    final_visual = Image.alpha_composite(base_image, overlay)
 
                     st.markdown("---")
-                    st.subheader("Forensic Evaluation Results")
-
-                    # Render distinct visual alert blocks based on classification
-                    if "Fake" in prediction or "Synthetic" in prediction:
-                        st.error(f"🚨 **Verdict: {prediction}**")
-                    else:
-                        st.success(f"✅ **Verdict: {prediction}**")
-
-                    # Clean metrics layout
-                    st.metric(
-                        label="Model Certainty Score", value=f"{confidence * 100:.2f}%"
+                    st.subheader("Localized Forensic Heatmap Overlay")
+                    st.image(
+                        final_visual,
+                        caption="Forensic Localization Mask Maping",
+                        use_container_width=True,
                     )
+
+                    # Display grid analytics summary metrics
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric(
+                            label="AI Corrupted Patches Detected", value=fake_count
+                        )
+                    with col2:
+                        st.metric(
+                            label="Authentic Structural Patches", value=real_count
+                        )
+
+                    if fake_count > 0:
+                        st.error(
+                            f"⚠️ Warning: Structural anomalies detected in {fake_count} localized matrix regions."
+                        )
+                    else:
+                        st.success(
+                            "✅ Complete Asset Scan: No localized anomaly arrays observed."
+                        )
 
                 else:
-                    st.error(
-                        f"Backend Server Error: Status Code {response.status_code}"
-                    )
-                    st.info(f"Details: {response.text}")
-
+                    st.error(f"Backend Error: {response.status_code}")
             except Exception as e:
-                st.error("Frontend parsing error encountered.")
-                st.exception(
-                    e
-                )  # This will print the exact traceback cleanly right on the webpage if it fails again
+                st.error("Frontend visualization compilation failed.")
+                st.exception(e)
