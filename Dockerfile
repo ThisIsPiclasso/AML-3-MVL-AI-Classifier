@@ -31,7 +31,7 @@ COPY MVL_AI_Classifier/models/layer_arc.py ./MVL_AI_Classifier/models/
 #import main app code
 COPY main.py ./ 
 COPY app.py ./
-COPY supervisord.conf ./
+COPY MVL_AI_Classifier/supervisord.conf ./
 EXPOSE 8000 8501
 
 CMD ["/usr/bin/supervisord", "-c", "supervisord.conf"]
