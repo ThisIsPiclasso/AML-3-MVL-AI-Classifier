@@ -53,7 +53,7 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     NUM_WORKERS,
     PARQUET_FILE,
-    _SIZE,
+    PATCH_SIZE,
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
