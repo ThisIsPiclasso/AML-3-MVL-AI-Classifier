@@ -53,7 +53,7 @@ from MVL_AI_Classifier.constants import (
     DEFAULT_N_LEVELS,
     NUM_WORKERS,
     PARQUET_FILE,
-    _SIZE,
+    PATCH_SIZE,
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -102,8 +102,8 @@ MODEL_CONFIGURATION = {
         "model_type": "cnn",
         "input_shape": (
             3,
-            _SIZE // 16,
-            _SIZE // 16,
+            PATCH_SIZE // 16,
+            PATCH_SIZE // 16,
         ),
         "preprocessor": NoiseResidualPreprocessor(),
     },
@@ -125,7 +125,7 @@ TEST_CACHE_PATH = CACHE_DIR / "test_features.h5"
 class RawPixelDataset(DataClass):
     """Dataset that returns raw RGB pixel es.
 
-    This subclass reuses the parquet loading, split filtering, and 
+    This subclass reuses the parquet loading, split filtering, and
     extraction logic provided by ``DataClass``. It skips all view
     preprocessors and only returns the raw  as a tensor
 
@@ -307,16 +307,16 @@ def train_and_predict_baseline(
     """
     model = BaselineCNN().to(DEVICE)
     if BASELINE_MODEL_PATH.exists():
-        model.load_state_dict(
-            torch.load(BASELINE_MODEL_PATH, map_location=DEVICE)
-        )
-    else: 
+        model.load_state_dict(torch.load(BASELINE_MODEL_PATH, map_location=DEVICE))
+    else:
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=BASELINE_LR)
 
         model.train()
         for _epoch in range(BASELINE_EPOCHS):
-            for batch in tqdm(train_loader, desc=f"Epoch {_epoch + 1}/{BASELINE_EPOCHS}"):
+            for batch in tqdm(
+                train_loader, desc=f"Epoch {_epoch + 1}/{BASELINE_EPOCHS}"
+            ):
                 images = batch["image"].to(DEVICE)
                 labels = batch["label"].to(DEVICE)
 
@@ -325,7 +325,6 @@ def train_and_predict_baseline(
                 loss.backward()
                 optimizer.step()
         torch.save(model.state_dict(), BASELINE_MODEL_PATH)
-
 
     model.eval()
 

@@ -30,7 +30,8 @@ COPY MVL_AI_Classifier/models/multi_view_manager_concat.py ./MVL_AI_Classifier/m
 COPY MVL_AI_Classifier/models/layer_arc.py ./MVL_AI_Classifier/models/
 #import main app code
 COPY main.py ./ 
-
+COPY app.py ./
+COPY MVL_AI_Classifier/supervisord.conf ./
 EXPOSE 8000 8501
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/usr/bin/supervisord", "-c", "supervisord.conf"]
