@@ -7,8 +7,6 @@ import matplotlib
 matplotlib.use("Agg")  # Prevent images from opening in a GUI during runs.
 
 import matplotlib.pyplot as plt
-from matplotlib.es import 
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -326,6 +324,8 @@ def train_and_predict_baseline(
                 loss = criterion(model(images), labels)
                 loss.backward()
                 optimizer.step()
+        torch.save(model.state_dict(), BASELINE_MODEL_PATH)
+
 
     model.eval()
 
@@ -894,16 +894,6 @@ def plot_per_generator_accuracy(
 
     ax.set_title(f"Per-Generator Accuracy — {model_name}")
     ax.grid(axis="x", alpha=0.3)
-
-    ax.legend(
-        handles=[
-            (facecolor="#4C72B0", label="Real sources"),
-            (facecolor="#DD8452", label="AI generators"),
-        ],
-        loc="lower right",
-        fontsize=8,
-    )
-
     plt.tight_layout()
 
     safe_name = model_name.replace(" ", "").lower()
@@ -1009,7 +999,7 @@ def main() -> None:
     test_loader = DataLoader(
         test_data,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         num_workers=NUM_WORKERS,
     )
 
