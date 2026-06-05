@@ -38,15 +38,14 @@ class PredictionOutput(BaseModel):
         ..., description="Model certainty score ranging between 0.0 and 1.0."
     )
 
+    class Config:
+        """
+        Pydantic model configuration class to provide additional metadata for API documentation.
+        """
 
-class Config:
-    """
-    Pydantic model configuration class to provide additional metadata for API documentation.
-    """
-
-    json_schema_extra = {
-        "example": {"prediction": "Synthetic/Fake", "confidence": 0.9845}
-    }
+        json_schema_extra = {
+            "example": {"prediction": "Synthetic/Fake", "confidence": 0.9845}
+        }
 
 
 request_history = {}
@@ -64,8 +63,24 @@ model.eval()
     description="Accepts an image file upload and returns a classification result indicating whether the image is",
     response_description="A structured JSON footprint detailing forensic evaluation results.",
     status_code=200,
+    responses={
+        400: {"description": "Bad Request (Missing file or corrupted data)"},
+        415: {"description": "Unsupported Media Type (Not a JPG/PNG)"},
+        422: {
+            "description": "Unprocessable Entity (Image canvas is smaller than 256x256px)",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": "Image size is too small (120x120px). Minimum size required is 256x256px."
+                    }
+                }
+            },
+        },
+    },
 )
-async def inf(file: UploadFile = File(None)):
+async def inf(
+    file: UploadFile = File(..., description="A valid .jpg, .jpeg, or .png image file"),
+):
     """
     API endpoint for classifying uploaded images as AI-generated or natural.
     Parameters:
