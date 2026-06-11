@@ -30,9 +30,7 @@ if uploaded_file is not None:
                         uploaded_file.type,
                     )
                 }
-                response = requests.post(
-                    "http://192.168.1.100:8000/api_post/", files=files
-                )
+                response = requests.post("http://127.0.0.1:8000/api_post/", files=files)
 
                 if response.status_code == 200:
                     results_data = response.json().get("patch_evaluations", [])

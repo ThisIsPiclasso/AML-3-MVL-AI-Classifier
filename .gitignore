@@ -11,7 +11,7 @@ data/cache.zip
 runs/
 data/data_cache
 models/trained_model.pt
-
+models/baseline_cnn.pt
 data/data_parquet
 optuna_tuning.db
 checkpoints/

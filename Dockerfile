@@ -16,7 +16,7 @@ RUN uv python install 3.12
 RUN uv sync --frozen --no-install-project --no-dev
 
 # import trained model
-#COPY models/trained_model.pt ./models/
+COPY models/trained_model.pt ./models/
 #IN CURRENT IMPLEMENTATION THIS IS INJECTED DIRECTLY BY UNRAID
 
 # import constants
